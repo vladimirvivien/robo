@@ -8,10 +8,11 @@ import (
 	"time"
 )
 
-const StateFilename = "daemon.json"
+const StateFilename = "robod.json"
 
 // State represents the active daemon metadata on disk.
 type State struct {
+	URL       string    `json:"url"`
 	Port      int       `json:"port"`
 	PID       int       `json:"pid"`
 	AuthToken string    `json:"auth_token"`

@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +25,8 @@ type Server struct {
 	authToken  string
 	modelName  string
 	statePath  string
+	tlsCert    string
+	tlsKey     string
 	mu         sync.Mutex
 	running    bool
 	startedAt  time.Time
@@ -30,11 +34,13 @@ type Server struct {
 
 // ServerOptions configures the daemon server.
 type ServerOptions struct {
-	Port      int
+	URL       string // Unified URL e.g. "http://127.0.0.1:8765" or "https://0.0.0.0:8765"
 	IdleTTL   time.Duration
 	AuthToken string
 	ModelName string
 	StatePath string
+	TLSCert   string // Path to TLS certificate for HTTPS
+	TLSKey    string // Path to TLS private key
 }
 
 // NewServer creates a new daemon Server with the given engine and options.
@@ -44,13 +50,6 @@ func NewServer(eng engine.Engine, opts ServerOptions) (*Server, error) {
 	}
 
 	authToken := opts.AuthToken
-	if authToken == "" {
-		token, err := GenerateAuthToken()
-		if err != nil {
-			return nil, fmt.Errorf("daemon: generate token: %w", err)
-		}
-		authToken = token
-	}
 
 	modelName := opts.ModelName
 	if modelName == "" {
@@ -62,6 +61,8 @@ func NewServer(eng engine.Engine, opts ServerOptions) (*Server, error) {
 		authToken: authToken,
 		modelName: modelName,
 		statePath: opts.StatePath,
+		tlsCert:   opts.TLSCert,
+		tlsKey:    opts.TLSKey,
 		startedAt: time.Now(),
 	}
 
@@ -86,9 +87,18 @@ func NewServer(eng engine.Engine, opts ServerOptions) (*Server, error) {
 	return s, nil
 }
 
-// Listen starts listening on 127.0.0.1 on the specified port (or dynamic :0 if port <= 0).
-func (s *Server) Listen(port int) error {
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
+// Listen starts listening on the network address specified by rawURL (e.g. "http://127.0.0.1:8765" or "http://127.0.0.1:0").
+func (s *Server) Listen(rawURL string) error {
+	if rawURL == "" {
+		rawURL = "http://127.0.0.1:8765"
+	}
+
+	host, port, err := ParseURLHostPort(rawURL)
+	if err != nil {
+		return fmt.Errorf("daemon: parse url: %w", err)
+	}
+
+	addr := net.JoinHostPort(host, port)
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("daemon: listen %s: %w", addr, err)
@@ -115,12 +125,30 @@ func (s *Server) Port() int {
 	return 0
 }
 
+// URL returns the effective HTTP or HTTPS URL of the bound server.
+func (s *Server) URL() string {
+	if s.listener != nil {
+		if tcpAddr, ok := s.listener.Addr().(*net.TCPAddr); ok {
+			host := tcpAddr.IP.String()
+			if host == "::" || host == "0.0.0.0" {
+				host = "127.0.0.1"
+			}
+			scheme := "http"
+			if s.tlsCert != "" && s.tlsKey != "" {
+				scheme = "https"
+			}
+			return fmt.Sprintf("%s://%s:%d", scheme, host, tcpAddr.Port)
+		}
+	}
+	return ""
+}
+
 // AuthToken returns the secret bearer token for this daemon instance.
 func (s *Server) AuthToken() string {
 	return s.authToken
 }
 
-// Serve runs the HTTP server and starts the watchdog timer.
+// Serve runs the HTTP/HTTPS server and starts the watchdog timer.
 func (s *Server) Serve(ctx context.Context) error {
 	s.mu.Lock()
 	if s.listener == nil {
@@ -130,8 +158,9 @@ func (s *Server) Serve(ctx context.Context) error {
 	s.running = true
 	s.mu.Unlock()
 
-	// Write daemon.json state file
+	// Write robod.json state file
 	state := State{
+		URL:       s.URL(),
 		Port:      s.Port(),
 		PID:       os.Getpid(),
 		AuthToken: s.authToken,
@@ -146,11 +175,37 @@ func (s *Server) Serve(ctx context.Context) error {
 	// Start watchdog loop in background
 	go s.watchdog.Start(ctx)
 
-	err := s.httpServer.Serve(s.listener)
+	var err error
+	if s.tlsCert != "" && s.tlsKey != "" {
+		err = s.httpServer.ServeTLS(s.listener, s.tlsCert, s.tlsKey)
+	} else {
+		err = s.httpServer.Serve(s.listener)
+	}
+
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil
+}
+
+// ParseURLHostPort extracts host and port from a URL or host:port string.
+func ParseURLHostPort(raw string) (string, string, error) {
+	if !strings.Contains(raw, "://") {
+		raw = "http://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", "", err
+	}
+	host := u.Hostname()
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	port := u.Port()
+	if port == "" {
+		port = "8765"
+	}
+	return host, port, nil
 }
 
 // Shutdown cleanly stops the server, cleans up state, and closes the engine.

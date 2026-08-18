@@ -53,10 +53,7 @@ func (w *Watchdog) Start(ctx context.Context) {
 	w.running = true
 	w.mu.Unlock()
 
-	checkInterval := max(w.idleTTL/5, 100*time.Millisecond)
-	if checkInterval > 30*time.Second {
-		checkInterval = 30 * time.Second
-	}
+	checkInterval := min(max(w.idleTTL/5, 100*time.Millisecond), 30*time.Second)
 
 	ticker := time.NewTicker(checkInterval)
 	defer ticker.Stop()

@@ -10,9 +10,10 @@ import (
 
 func TestState_SaveLoadRemove(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "daemon.json")
+	path := filepath.Join(dir, "robod.json")
 
 	initial := daemon.State{
+		URL:       "http://127.0.0.1:8765",
 		Port:      8765,
 		PID:       12345,
 		AuthToken: "token-abc-123",
@@ -30,6 +31,9 @@ func TestState_SaveLoadRemove(t *testing.T) {
 		t.Fatalf("LoadState failed: %v", err)
 	}
 
+	if loaded.URL != initial.URL {
+		t.Errorf("expected URL %s, got %s", initial.URL, loaded.URL)
+	}
 	if loaded.Port != initial.Port {
 		t.Errorf("expected port %d, got %d", initial.Port, loaded.Port)
 	}

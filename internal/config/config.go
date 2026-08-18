@@ -15,13 +15,14 @@ const (
 	DefaultConfigDir       = ".config/robo"
 	DefaultConfigFile      = "config.yaml"
 	DefaultLocalModel      = "litert-community/gemma3-1b-it-int4"
+	DefaultLocalLibVersion = "v0.16.0"
 	DefaultCloudModel      = "googleai/gemini-2.5-flash"
 	DefaultCloudProvider   = "googleai"
 	DefaultLocalBackend    = "gpu"
 	DefaultRoutingStrategy = "auto"
 	DefaultMaxLocalTokens  = 4096
-	DefaultDaemonPort      = 8765
-	DefaultDaemonIdleTTL   = 15 * time.Minute
+	DefaultRobodURL        = "http://127.0.0.1:8765"
+	DefaultRobodIdleTTL    = 15 * time.Minute
 	DefaultOutputMode      = "markdown"
 	DefaultSessionMode     = "daily"
 	DefaultShellAlias      = "ai"
@@ -33,7 +34,7 @@ type Config struct {
 	DefaultSession string        `yaml:"default_session"`
 	Routing        RoutingConfig `yaml:"routing"`
 	Local          LocalConfig   `yaml:"local"`
-	Daemon         DaemonConfig  `yaml:"daemon"`
+	Robod          RobodConfig   `yaml:"robod"`
 	Cloud          CloudConfig   `yaml:"cloud"`
 	Shell          ShellConfig   `yaml:"shell"`
 }
@@ -53,19 +54,32 @@ type LocalConfig struct {
 	AutoDownload bool   `yaml:"auto_download"`
 	CacheDir     string `yaml:"cache_dir"`
 	LibDir       string `yaml:"lib_dir"`
+	LibVersion   string `yaml:"lib_version"`
 }
 
-// DaemonConfig defines settings for the hot-start background daemon.
-type DaemonConfig struct {
-	Enabled bool          `yaml:"enabled"`
-	IdleTTL time.Duration `yaml:"idle_ttl"`
-	Port    int           `yaml:"port"`
+// RobodConfig defines settings for the hot-start background robod daemon.
+type RobodConfig struct {
+	Enabled   bool          `yaml:"enabled"`
+	URL       string        `yaml:"url"`        // Unified endpoint URL (e.g. "http://127.0.0.1:8765" or "https://gpu-box:8765")
+	AuthToken string        `yaml:"auth_token"` // Optional pre-shared auth token
+	AutoSpawn bool          `yaml:"auto_spawn"` // Auto-spawn background process if URL points to localhost
+	IdleTTL   time.Duration `yaml:"idle_ttl"`
+	TLS       TLSConfig     `yaml:"tls"`
+}
+
+// TLSConfig defines transport security parameters for robod HTTPS connections.
+type TLSConfig struct {
+	CertFile           string `yaml:"cert_file"`
+	KeyFile            string `yaml:"key_file"`
+	CAFile             string `yaml:"ca_file"`
+	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"`
 }
 
 // CloudConfig defines settings for the Genkit cloud engine.
 type CloudConfig struct {
 	Provider  string `yaml:"provider"` // "googleai", "anthropic", "openai"
 	Model     string `yaml:"model"`
+	BaseURL   string `yaml:"base_url"`
 	APIKey    string `yaml:"api_key"`
 	APIKeyEnv string `yaml:"api_key_env"`
 }
@@ -96,11 +110,13 @@ func NewDefaultConfig() *Config {
 			Backend:      DefaultLocalBackend,
 			AutoDownload: true,
 			CacheDir:     filepath.Join(configDir, "cache"),
+			LibVersion:   DefaultLocalLibVersion,
 		},
-		Daemon: DaemonConfig{
-			Enabled: true,
-			IdleTTL: DefaultDaemonIdleTTL,
-			Port:    DefaultDaemonPort,
+		Robod: RobodConfig{
+			Enabled:   true,
+			URL:       DefaultRobodURL,
+			AutoSpawn: true,
+			IdleTTL:   DefaultRobodIdleTTL,
 		},
 		Cloud: CloudConfig{
 			Provider:  DefaultCloudProvider,
@@ -192,6 +208,36 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if env := os.Getenv("LITERTLM_LIB"); env != "" {
 		c.Local.LibDir = env
+	}
+	if env := os.Getenv("ROBO_LOCAL_LIB_VERSION"); env != "" {
+		c.Local.LibVersion = env
+	} else if env := os.Getenv("LITERTLM_LIB_VERSION"); env != "" {
+		c.Local.LibVersion = env
+	}
+	if env := os.Getenv("ROBO_CLOUD_BASE_URL"); env != "" {
+		c.Cloud.BaseURL = env
+	}
+	if env := os.Getenv("ROBO_ROBOD_URL"); env != "" {
+		c.Robod.URL = env
+	} else if env := os.Getenv("ROBO_DAEMON_URL"); env != "" {
+		c.Robod.URL = env
+	}
+	if env := os.Getenv("ROBO_ROBOD_TOKEN"); env != "" {
+		c.Robod.AuthToken = env
+	} else if env := os.Getenv("ROBO_DAEMON_TOKEN"); env != "" {
+		c.Robod.AuthToken = env
+	}
+	if env := os.Getenv("ROBO_ROBOD_TLS_CERT"); env != "" {
+		c.Robod.TLS.CertFile = env
+	}
+	if env := os.Getenv("ROBO_ROBOD_TLS_KEY"); env != "" {
+		c.Robod.TLS.KeyFile = env
+	}
+	if env := os.Getenv("ROBO_ROBOD_TLS_CA"); env != "" {
+		c.Robod.TLS.CAFile = env
+	}
+	if env := os.Getenv("ROBO_ROBOD_TLS_INSECURE"); env == "1" || strings.ToLower(env) == "true" {
+		c.Robod.TLS.InsecureSkipVerify = true
 	}
 
 	// Resolve API key from environment variable name if configured

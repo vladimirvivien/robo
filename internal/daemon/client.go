@@ -4,10 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -30,20 +33,20 @@ type Client struct {
 	inProcFallback bool
 }
 
-// ClientOption configures the daemon client.
+// ClientOption configures a Client instance.
 type ClientOption func(*Client)
 
-// WithInProcEngine configures an in-process fallback engine.
-func WithInProcEngine(eng engine.Engine) ClientOption {
-	return func(c *Client) {
-		c.inProcEngine = eng
-	}
-}
-
-// WithStatePath overrides the daemon state file path.
+// WithStatePath overrides the location of robod.json.
 func WithStatePath(path string) ClientOption {
 	return func(c *Client) {
 		c.statePath = path
+	}
+}
+
+// WithInProcEngine sets the fallback on-device engine.
+func WithInProcEngine(eng engine.Engine) ClientOption {
+	return func(c *Client) {
+		c.inProcEngine = eng
 	}
 }
 
@@ -61,13 +64,32 @@ func WithHTTPClient(client *http.Client) ClientOption {
 	}
 }
 
-// NewClient creates a new daemon Client.
+// NewClient creates a new daemon Client with optional TLS support.
 func NewClient(cfg config.Config, opts ...ClientOption) *Client {
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: cfg.Robod.TLS.InsecureSkipVerify, //nolint:gosec
+	}
+
+	if cfg.Robod.TLS.CAFile != "" {
+		caData, err := os.ReadFile(cfg.Robod.TLS.CAFile)
+		if err == nil {
+			pool := x509.NewCertPool()
+			if pool.AppendCertsFromPEM(caData) {
+				tlsConfig.RootCAs = pool
+			}
+		}
+	}
+
+	transport := &http.Transport{
+		TLSClientConfig: tlsConfig,
+	}
+
 	c := &Client{
 		cfg:       cfg,
 		statePath: StatePath(),
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
+			Transport: transport,
+			Timeout:   120 * time.Second,
 		},
 		inProcFallback: true,
 	}
@@ -88,26 +110,68 @@ func (c *Client) Name() string {
 	return "daemon-client"
 }
 
+type endpointTarget struct {
+	baseURL string
+	token   string
+}
+
 // EnsureDaemon ensures the background daemon is healthy, spawning it if necessary.
 func (c *Client) EnsureDaemon(ctx context.Context) (*State, error) {
+	target, err := c.resolveEndpoint(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if c.cachedState != nil {
+		return c.cachedState, nil
+	}
+	return &State{
+		URL:       target.baseURL,
+		AuthToken: target.token,
+	}, nil
+}
+
+func (c *Client) resolveEndpoint(ctx context.Context) (*endpointTarget, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Check if cached or on-disk state is currently healthy
-	state, err := LoadState(c.statePath)
-	if err == nil && c.ping(ctx, state) == nil {
-		c.cachedState = state
-		return state, nil
+	targetURL := c.cfg.Robod.URL
+	if targetURL == "" {
+		targetURL = config.DefaultRobodURL
+	}
+	baseURL := strings.TrimRight(targetURL, "/")
+	token := c.cfg.Robod.AuthToken
+
+	// 1. If remote endpoint (not localhost), connect directly
+	if !isLocalEndpoint(baseURL) {
+		return &endpointTarget{
+			baseURL: baseURL,
+			token:   token,
+		}, nil
 	}
 
-	// If daemon disabled in config, fail fast to in-process fallback
-	if !c.cfg.Daemon.Enabled {
-		return nil, errors.New("daemon: disabled in configuration")
+	// 2. Check if local endpoint is already running
+	if c.pingURL(ctx, baseURL) == nil {
+		// Read token from state file if none configured
+		if token == "" {
+			if state, err := LoadState(c.statePath); err == nil {
+				token = state.AuthToken
+				c.cachedState = state
+			}
+		}
+		return &endpointTarget{
+			baseURL: baseURL,
+			token:   token,
+		}, nil
 	}
 
-	// Try spawning the daemon
+	// 3. If robod disabled or auto-spawn disabled, fail fast to in-process fallback
+	if !c.cfg.Robod.Enabled || !c.cfg.Robod.AutoSpawn {
+		return nil, errors.New("robod: auto-spawn disabled or daemon inactive")
+	}
+
+	// 4. Try spawning local daemon
 	if err := c.launcher(); err != nil {
-		return nil, fmt.Errorf("daemon: auto-spawn failed: %w", err)
+		return nil, fmt.Errorf("robod: auto-spawn failed: %w", err)
 	}
 
 	// Poll for readiness up to 3 seconds
@@ -119,19 +183,38 @@ func (c *Client) EnsureDaemon(ctx context.Context) (*State, error) {
 		case <-time.After(100 * time.Millisecond):
 		}
 
-		state, err := LoadState(c.statePath)
-		if err == nil && c.ping(ctx, state) == nil {
-			c.cachedState = state
-			return state, nil
+		if c.pingURL(ctx, baseURL) == nil {
+			if token == "" {
+				if state, err := LoadState(c.statePath); err == nil {
+					token = state.AuthToken
+					c.cachedState = state
+				}
+			}
+			return &endpointTarget{
+				baseURL: baseURL,
+				token:   token,
+			}, nil
 		}
 	}
 
 	return nil, errors.New("daemon: timed out waiting for daemon readiness")
 }
 
+func isLocalEndpoint(raw string) bool {
+	if !strings.Contains(raw, "://") {
+		raw = "http://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	return host == "" || host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "0.0.0.0"
+}
+
 // Generate executes a synchronous completion against the daemon or in-proc fallback.
 func (c *Client) Generate(ctx context.Context, req engine.Request) (*engine.Response, error) {
-	state, err := c.EnsureDaemon(ctx)
+	target, err := c.resolveEndpoint(ctx)
 	if err != nil {
 		if c.inProcEngine != nil && c.inProcFallback {
 			return c.inProcEngine.Generate(ctx, req)
@@ -153,15 +236,15 @@ func (c *Client) Generate(ctx context.Context, req engine.Request) (*engine.Resp
 		return nil, fmt.Errorf("daemon client: marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("http://127.0.0.1:%d/v1/generate", state.Port)
+	url := fmt.Sprintf("%s/v1/generate", target.baseURL)
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("daemon client: new request: %w", err)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
-	if state.AuthToken != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+state.AuthToken)
+	if target.token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+target.token)
 	}
 
 	httpResp, err := c.httpClient.Do(httpReq)
@@ -198,7 +281,7 @@ func (c *Client) Generate(ctx context.Context, req engine.Request) (*engine.Resp
 
 // GenerateStream yields tokens over a channel from the daemon's SSE stream.
 func (c *Client) GenerateStream(ctx context.Context, req engine.Request) (<-chan engine.StreamChunk, error) {
-	state, err := c.EnsureDaemon(ctx)
+	target, err := c.resolveEndpoint(ctx)
 	if err != nil {
 		if c.inProcEngine != nil && c.inProcFallback {
 			return c.inProcEngine.GenerateStream(ctx, req)
@@ -220,15 +303,15 @@ func (c *Client) GenerateStream(ctx context.Context, req engine.Request) (<-chan
 		return nil, fmt.Errorf("daemon client: marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("http://127.0.0.1:%d/v1/generate/stream", state.Port)
+	url := fmt.Sprintf("%s/v1/generate/stream", target.baseURL)
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("daemon client: new request: %w", err)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
-	if state.AuthToken != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+state.AuthToken)
+	if target.token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+target.token)
 	}
 
 	httpResp, err := c.httpClient.Do(httpReq)
@@ -288,15 +371,15 @@ func (c *Client) Close() error {
 	return nil
 }
 
-func (c *Client) ping(ctx context.Context, state *State) error {
-	if state == nil || state.Port <= 0 {
-		return errors.New("daemon: invalid state")
+func (c *Client) pingURL(ctx context.Context, baseURL string) error {
+	if baseURL == "" {
+		return errors.New("daemon: empty base URL")
 	}
 
 	pingCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
 	defer cancel()
 
-	url := fmt.Sprintf("http://127.0.0.1:%d/health", state.Port)
+	url := fmt.Sprintf("%s/health", strings.TrimRight(baseURL, "/"))
 	req, err := http.NewRequestWithContext(pingCtx, "GET", url, nil)
 	if err != nil {
 		return err

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -23,7 +22,7 @@ func TestServer_HealthAuthGenerateStream(t *testing.T) {
 
 	token := "test-secret-token-123"
 	server, err := daemon.NewServer(mock, daemon.ServerOptions{
-		Port:      0, // dynamic port
+		URL:       "http://127.0.0.1:0", // dynamic port
 		AuthToken: token,
 		ModelName: "test-gemma",
 		StatePath: statePath,
@@ -33,7 +32,7 @@ func TestServer_HealthAuthGenerateStream(t *testing.T) {
 		t.Fatalf("NewServer failed: %v", err)
 	}
 
-	if err := server.Listen(0); err != nil {
+	if err := server.Listen("http://127.0.0.1:0"); err != nil {
 		t.Fatalf("Listen failed: %v", err)
 	}
 
@@ -43,13 +42,10 @@ func TestServer_HealthAuthGenerateStream(t *testing.T) {
 		_ = server.Serve(ctx)
 	}()
 
-	// Wait for server to bind port
-	port := server.Port()
-	if port <= 0 {
-		t.Fatalf("invalid server port: %d", port)
+	baseURL := server.URL()
+	if baseURL == "" {
+		t.Fatal("expected non-empty server URL")
 	}
-
-	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 
 	// 1. Test GET /health (unauthenticated)
 	healthResp, err := http.Get(baseURL + "/health")

@@ -47,7 +47,11 @@ func (e *Engine) Client(ctx context.Context) (*litertlm.Client, error) {
 
 	// Auto-provision native shared libraries if needed
 	if libDir == "" && e.cfg.AutoDownload {
-		dir, err := litertlm.FetchLib(runtime.GOOS, runtime.GOARCH, "v0.16.0")
+		libVersion := e.cfg.LibVersion
+		if libVersion == "" {
+			libVersion = config.DefaultLocalLibVersion
+		}
+		dir, err := litertlm.FetchLib(runtime.GOOS, runtime.GOARCH, libVersion)
 		if err != nil {
 			return nil, fmt.Errorf("local: fetch lib: %w", err)
 		}

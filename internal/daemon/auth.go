@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"net/http"
 	"strings"
@@ -19,7 +20,7 @@ func GenerateAuthToken() (string, error) {
 // RequireAuth wraps an http.HandlerFunc to enforce Bearer token authentication.
 func RequireAuth(validToken string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// If no token configured, bypass
+		// If no token configured, bypass authentication (1-to-1 mode)
 		if validToken == "" {
 			next(w, r)
 			return
@@ -32,7 +33,7 @@ func RequireAuth(validToken string, next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || parts[1] != validToken {
+		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || subtle.ConstantTimeCompare([]byte(parts[1]), []byte(validToken)) != 1 {
 			http.Error(w, `{"error":"unauthorized: invalid token"}`, http.StatusUnauthorized)
 			return
 		}
