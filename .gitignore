@@ -1,0 +1,11 @@
+dist/
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+*.log
+*.tmp
+.DS_Store
+.agent/
+.agents/
