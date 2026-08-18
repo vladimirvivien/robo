@@ -85,10 +85,12 @@ type CloudConfig struct {
 	APIKeyEnv string `yaml:"api_key_env"`
 }
 
-// ShellConfig defines ambient context settings for Bash/Zsh/Fish/PowerShell.
+// ShellConfig defines ambient context and execution settings for Bash/Zsh/Fish/PowerShell.
 type ShellConfig struct {
 	CaptureHistory  bool `yaml:"capture_history"`
 	MaxHistoryLines int  `yaml:"max_history_lines"`
+	AutoAccept      bool `yaml:"auto_accept"`
+	YoloApproveAll  bool `yaml:"yolo_approve_all"`
 }
 
 // NewDefaultConfig returns a Config struct initialized with standard defaults.
@@ -237,6 +239,12 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if env := os.Getenv("ROBO_ROBOD_TLS_INSECURE"); env == "1" || strings.ToLower(env) == "true" {
 		c.Robod.TLS.InsecureSkipVerify = true
+	}
+	if env := os.Getenv("ROBO_AUTO_ACCEPT"); env == "1" || strings.ToLower(env) == "true" {
+		c.Shell.AutoAccept = true
+	}
+	if env := os.Getenv("ROBO_YOLO_APPROVE_ALL"); env == "1" || strings.ToLower(env) == "true" {
+		c.Shell.YoloApproveAll = true
 	}
 
 	// Resolve API key from environment variable name if configured

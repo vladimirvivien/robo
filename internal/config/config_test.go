@@ -72,6 +72,8 @@ func TestConfig_EnvOverrides(t *testing.T) {
 	t.Setenv("ROBO_CLOUD_BASE_URL", "https://env.api.com")
 	t.Setenv("ROBO_ROBOD_URL", "http://env-robod:8888")
 	t.Setenv("ROBO_ROBOD_TOKEN", "token-env-999")
+	t.Setenv("ROBO_AUTO_ACCEPT", "true")
+	t.Setenv("ROBO_YOLO_APPROVE_ALL", "1")
 	t.Setenv("GEMINI_API_KEY", "test-key-123")
 
 	dir := t.TempDir()
@@ -102,5 +104,11 @@ func TestConfig_EnvOverrides(t *testing.T) {
 	}
 	if cfg.Cloud.APIKey != "test-key-123" {
 		t.Errorf("expected APIKey 'test-key-123', got %q", cfg.Cloud.APIKey)
+	}
+	if !cfg.Shell.AutoAccept {
+		t.Error("expected Shell.AutoAccept to be true via env")
+	}
+	if !cfg.Shell.YoloApproveAll {
+		t.Error("expected Shell.YoloApproveAll to be true via env")
 	}
 }

@@ -19,12 +19,14 @@ import (
 )
 
 var (
-	cfgFile      string
-	flagLocal    bool
-	flagCloud    bool
-	flagOutput   string
-	flagSystem   string
-	flagNoStream bool
+	cfgFile            string
+	flagLocal          bool
+	flagCloud          bool
+	flagOutput         string
+	flagSystem         string
+	flagNoStream       bool
+	flagAutoAccept     bool
+	flagYoloApproveAll bool
 )
 
 // RootCmd represents the base command when called without subcommands.
@@ -50,6 +52,8 @@ func init() {
 	RootCmd.Flags().StringVarP(&flagOutput, "output", "o", "markdown", "output format (markdown, plain, json, code)")
 	RootCmd.Flags().StringVar(&flagSystem, "system", "", "custom system prompt override")
 	RootCmd.Flags().BoolVar(&flagNoStream, "no-stream", false, "disable streaming output")
+	RootCmd.Flags().BoolVarP(&flagAutoAccept, "auto-accept", "y", false, "auto-accept all non-destructive actions without prompt")
+	RootCmd.Flags().BoolVar(&flagYoloApproveAll, "yolo-approve-all", false, "auto-accept and execute all actions including destructive ones (no prompts)")
 }
 
 func runRoot(cmd *cobra.Command, args []string) error {
@@ -135,6 +139,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 
 	// 6. Execute generation
 	isInteractive := ui.IsStdoutTerminal() && flagOutput == "markdown"
+	var fullText strings.Builder
 
 	if flagNoStream || !isInteractive {
 		resp, err := r.Generate(ctx, req)
@@ -147,6 +152,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
+		fullText.WriteString(resp.Text)
 		if isInteractive {
 			banner := ui.HeaderBanner(resp.Provider, resp.Model, resp.UsedLocal)
 			rendered, _ := ui.RenderMarkdown(resp.Text, ui.TerminalWidth())
@@ -157,31 +163,95 @@ func runRoot(cmd *cobra.Command, args []string) error {
 				fmt.Println()
 			}
 		}
+	} else {
+		// Streaming output
+		stream, err := r.GenerateStream(ctx, req)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, ui.ErrorCard(err.Error()))
+			return err
+		}
+
+		for chunk := range stream {
+			if chunk.Error != nil {
+				fmt.Fprintf(os.Stderr, "\n[stream error]: %v\n", chunk.Error)
+				return chunk.Error
+			}
+			fmt.Print(chunk.Text)
+			fullText.WriteString(chunk.Text)
+		}
+		if !strings.HasSuffix(fullText.String(), "\n") {
+			fmt.Println()
+		}
+	}
+
+	// 7. Check for proposed shell command and handle execution review
+	return handleProposedAction(ctx, cfg, fullText.String(), isInteractive)
+}
+
+func handleProposedAction(ctx context.Context, cfg *config.Config, responseText string, isInteractive bool) error {
+	cmdStr := shell.ExtractProposedCommand(responseText)
+	if cmdStr == "" {
 		return nil
 	}
 
-	// Streaming output
-	stream, err := r.GenerateStream(ctx, req)
-	if err != nil {
+	isDestructive, reason := shell.IsDestructiveCommand(cmdStr)
+	yolo := flagYoloApproveAll || cfg.Shell.YoloApproveAll
+	autoAccept := flagAutoAccept || cfg.Shell.AutoAccept
+
+	// 1. YOLO Mode: Auto-execute everything immediately with zero prompts
+	if yolo {
 		if isInteractive {
-			fmt.Fprintln(os.Stderr, ui.ErrorCard(err.Error()))
-		} else {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			fmt.Println()
+			fmt.Println(ui.CommandCard("Auto-Executing Command (--yolo-approve-all)", cmdStr))
 		}
-		return err
+		return shell.ExecuteInActiveShell(ctx, cmdStr)
 	}
 
-	var fullText strings.Builder
-	for chunk := range stream {
-		if chunk.Error != nil {
-			fmt.Fprintf(os.Stderr, "\n[stream error]: %v\n", chunk.Error)
-			return chunk.Error
+	// 2. Auto-Accept Mode: Auto-execute non-destructive commands
+	if autoAccept && !isDestructive {
+		if isInteractive {
+			fmt.Println()
+			fmt.Println(ui.CommandCard("Auto-Executing Safe Command (--auto-accept)", cmdStr))
 		}
-		fmt.Print(chunk.Text)
-		fullText.WriteString(chunk.Text)
+		return shell.ExecuteInActiveShell(ctx, cmdStr)
 	}
-	if !strings.HasSuffix(fullText.String(), "\n") {
+
+	// Non-interactive pipelines without YOLO/AutoAccept should not prompt
+	if !isInteractive {
+		if isDestructive {
+			return fmt.Errorf("command is destructive (%s); use --yolo-approve-all to execute in non-interactive mode", reason)
+		}
+		return nil
+	}
+
+	// 3. Interactive Destructive Guard: Requires typed confirmation
+	if isDestructive {
 		fmt.Println()
+		fmt.Println(ui.Card(
+			ui.BadgeWarning("Destructive Command Guard"),
+			fmt.Sprintf("Proposed Command:\n  %s\n\nRisk: %s", cmdStr, reason),
+			"Requires typed confirmation before execution",
+		))
+
+		confirmed, err := ui.PromptDestructiveConfirm("Warning: This command may perform destructive modifications.", "yes-execute")
+		if err != nil || !confirmed {
+			fmt.Println("Execution cancelled.")
+			return nil
+		}
+		return shell.ExecuteInActiveShell(ctx, cmdStr)
+	}
+
+	// 4. Interactive Review: [Run] [Edit] [Cancel]
+	fmt.Println()
+	fmt.Println(ui.CommandCard("Proposed Shell Command", cmdStr))
+
+	action, finalCmd, err := ui.PromptCommandReview(cmdStr)
+	if err != nil || action == ui.ActionCancel {
+		return nil
+	}
+
+	if action == ui.ActionRun {
+		return shell.ExecuteInActiveShell(ctx, finalCmd)
 	}
 
 	return nil
