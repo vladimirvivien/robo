@@ -1,0 +1,91 @@
+package ui
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"sync"
+	"time"
+
+	"charm.land/lipgloss/v2"
+)
+
+var (
+	spinnerFrames    = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	styleSpinner     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#00F0FF"))
+	styleSpinnerText = lipgloss.NewStyle().Foreground(lipgloss.Color("#94A3B8"))
+)
+
+// Spinner represents an interactive terminal busy indicator.
+type Spinner struct {
+	message string
+	stopCh  chan struct{}
+	doneCh  chan struct{}
+	mu      sync.Mutex
+	stopped bool
+	out     io.Writer
+}
+
+// StartSpinner creates and starts an animated spinner on stdout if in a terminal.
+func StartSpinner(message string) *Spinner {
+	s := &Spinner{
+		message: message,
+		stopCh:  make(chan struct{}),
+		doneCh:  make(chan struct{}),
+		out:     os.Stdout,
+	}
+
+	if !IsStdoutTerminal() {
+		close(s.doneCh)
+		return s
+	}
+
+	go s.run()
+	return s
+}
+
+func (s *Spinner) run() {
+	defer close(s.doneCh)
+	ticker := time.NewTicker(80 * time.Millisecond)
+	defer ticker.Stop()
+
+	frameIdx := 0
+	for {
+		select {
+		case <-s.stopCh:
+			// Clear spinner line
+			_, _ = fmt.Fprint(s.out, "\r\033[K")
+			return
+		case <-ticker.C:
+			s.mu.Lock()
+			msg := s.message
+			s.mu.Unlock()
+
+			frame := spinnerFrames[frameIdx%len(spinnerFrames)]
+			frameIdx++
+
+			_, _ = fmt.Fprintf(s.out, "\r%s %s", styleSpinner.Render(frame), styleSpinnerText.Render(msg))
+		}
+	}
+}
+
+// UpdateMessage changes the status text displayed next to the spinner.
+func (s *Spinner) UpdateMessage(msg string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.message = msg
+}
+
+// Stop halts the spinner and clears its terminal line.
+func (s *Spinner) Stop() {
+	s.mu.Lock()
+	if s.stopped {
+		s.mu.Unlock()
+		return
+	}
+	s.stopped = true
+	s.mu.Unlock()
+
+	close(s.stopCh)
+	<-s.doneCh
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -35,6 +36,7 @@ var RootCmd = &cobra.Command{
 	Short: "robo: AI-native developer companion and terminal assistant",
 	Long: `robo is a two-tier AI assistant with sub-50ms hot-start on-device execution
 powered by LiteRT-LM (robod) and intelligent automatic escalation to frontier cloud models.`,
+	Args:          cobra.ArbitraryArgs,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE:          runRoot,
@@ -72,27 +74,49 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	var prompt string
 	var stdinContent string
 
-	if !ui.IsStdinTerminal() {
+	if len(args) > 0 {
+		prompt = strings.Join(args, " ")
+	} else if !ui.IsStdinTerminal() {
+		// Only read stdin when no args provided and stdin is piped
 		data, err := io.ReadAll(os.Stdin)
 		if err == nil && len(data) > 0 {
-			stdinContent = string(data)
+			prompt = strings.TrimSpace(string(data))
 		}
 	}
 
-	if len(args) > 0 {
-		prompt = strings.Join(args, " ")
-	} else if stdinContent != "" {
-		prompt = stdinContent
-		stdinContent = ""
-	}
-
 	if prompt == "" {
+		if ui.IsStdoutTerminal() && ui.IsStdinTerminal() {
+			return runChat(cmd, args)
+		}
 		return cmd.Help()
 	}
 
-	// 3. Assemble ambient shell context
+	// 3. Validate inference environment setup
+	forceBackend := ""
+	if flagLocal {
+		forceBackend = "local-only"
+	} else if flagCloud {
+		forceBackend = "cloud-only"
+	}
+	if err := engine.ValidateInferenceSetup(cfg, forceBackend); err != nil {
+		if ui.IsStdoutTerminal() {
+			fmt.Fprintln(os.Stderr, ui.ErrorCard(err.Error()))
+		} else {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		}
+		return err
+	}
+
+	// 4. Assemble ambient shell context
 	var systemPrompt strings.Builder
+	systemPrompt.WriteString(config.DefaultRoboSystemPrompt)
+	systemPrompt.WriteString("\n\n")
+
+	// Inject OS / Architecture / Shell environment target
+	fmt.Fprintf(&systemPrompt, "[Runtime Target]\nOS: %s\nArchitecture: %s\nActive Shell: %s\n\n", runtime.GOOS, runtime.GOARCH, shell.DetectShell())
+
 	if flagSystem != "" {
+		systemPrompt.WriteString("User Instructions:\n")
 		systemPrompt.WriteString(flagSystem)
 		systemPrompt.WriteString("\n\n")
 	}
@@ -141,51 +165,58 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	isInteractive := ui.IsStdoutTerminal() && flagOutput == "markdown"
 	var fullText strings.Builder
 
-	if flagNoStream || !isInteractive {
-		resp, err := r.Generate(ctx, req)
-		if err != nil {
-			if isInteractive {
-				fmt.Fprintln(os.Stderr, ui.ErrorCard(err.Error()))
-			} else {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			}
-			return err
-		}
-
-		fullText.WriteString(resp.Text)
+	sp := ui.StartSpinner("Working...")
+	stream, err := r.GenerateStream(ctx, req)
+	if err != nil {
+		sp.Stop()
 		if isInteractive {
-			banner := ui.HeaderBanner(resp.Provider, resp.Model, resp.UsedLocal)
-			rendered, _ := ui.RenderMarkdown(resp.Text, ui.TerminalWidth())
-			fmt.Printf("%s\n\n%s", banner, rendered)
+			fmt.Fprintln(os.Stderr, ui.ErrorCard(err.Error()))
 		} else {
-			fmt.Print(resp.Text)
-			if !strings.HasSuffix(resp.Text, "\n") {
-				fmt.Println()
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		}
+		return err
+	}
+
+	for chunk := range stream {
+		if chunk.Error != nil {
+			sp.Stop()
+			fmt.Fprintf(os.Stderr, "\n[stream error]: %v\n", chunk.Error)
+			return chunk.Error
+		}
+		fullText.WriteString(chunk.Text)
+	}
+	sp.Stop()
+
+	rawResponse := fullText.String()
+	cmdStr := shell.ExtractProposedCommand(rawResponse)
+
+	if isInteractive {
+		if cmdStr == "" {
+			// No command to execute: render full response as markdown
+			rendered, _ := ui.RenderMarkdown(rawResponse, ui.TerminalWidth())
+			fmt.Print(rendered)
+		} else {
+			// Command proposed: render any explanatory text outside the code block
+			explanation := strings.TrimSpace(shell.StripCodeBlock(rawResponse))
+			if explanation != "" {
+				rendered, _ := ui.RenderMarkdown(explanation, ui.TerminalWidth())
+				fmt.Print(rendered)
 			}
 		}
 	} else {
-		// Streaming output
-		stream, err := r.GenerateStream(ctx, req)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, ui.ErrorCard(err.Error()))
-			return err
-		}
-
-		for chunk := range stream {
-			if chunk.Error != nil {
-				fmt.Fprintf(os.Stderr, "\n[stream error]: %v\n", chunk.Error)
-				return chunk.Error
+		// Non-interactive / scripted output
+		if flagOutput == "code" && cmdStr != "" {
+			fmt.Println(cmdStr)
+		} else {
+			fmt.Print(rawResponse)
+			if !strings.HasSuffix(rawResponse, "\n") {
+				fmt.Println()
 			}
-			fmt.Print(chunk.Text)
-			fullText.WriteString(chunk.Text)
-		}
-		if !strings.HasSuffix(fullText.String(), "\n") {
-			fmt.Println()
 		}
 	}
 
 	// 7. Check for proposed shell command and handle execution review
-	return handleProposedAction(ctx, cfg, fullText.String(), isInteractive)
+	return handleProposedAction(ctx, cfg, rawResponse, isInteractive)
 }
 
 func handleProposedAction(ctx context.Context, cfg *config.Config, responseText string, isInteractive bool) error {

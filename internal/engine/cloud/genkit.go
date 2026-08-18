@@ -35,7 +35,7 @@ func (e *Engine) Name() string {
 }
 
 // Genkit returns the initialized Genkit instance, lazily initializing provider plugins.
-func (e *Engine) Genkit(ctx context.Context) (*genkit.Genkit, error) {
+func (e *Engine) Genkit(ctx context.Context) (resG *genkit.Genkit, err error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -48,19 +48,44 @@ func (e *Engine) Genkit(ctx context.Context) (*genkit.Genkit, error) {
 		apiKey = os.Getenv(e.cfg.APIKeyEnv)
 	}
 
+	expectedKeyEnv := e.cfg.APIKeyEnv
+	if expectedKeyEnv == "" {
+		switch strings.ToLower(e.cfg.Provider) {
+		case "anthropic", "claude":
+			expectedKeyEnv = "ANTHROPIC_API_KEY"
+		case "openai":
+			expectedKeyEnv = "OPENAI_API_KEY"
+		default:
+			expectedKeyEnv = "GEMINI_API_KEY"
+		}
+	}
+
+	if apiKey == "" && expectedKeyEnv != "" {
+		apiKey = os.Getenv(expectedKeyEnv)
+	}
+	if apiKey == "" && (strings.ToLower(e.cfg.Provider) == "googleai" || strings.ToLower(e.cfg.Provider) == "gemini" || e.cfg.Provider == "") {
+		apiKey = os.Getenv("GOOGLE_API_KEY")
+	}
+
+	if apiKey == "" {
+		return nil, fmt.Errorf("cloud engine: provider %q requires setting %s in the environment", e.cfg.Provider, expectedKeyEnv)
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("cloud engine initialization: %v", r)
+		}
+	}()
+
 	var plugins []api.Plugin
 
 	switch strings.ToLower(e.cfg.Provider) {
 	case "googleai", "gemini", "":
-		if apiKey != "" {
-			_ = os.Setenv("GEMINI_API_KEY", apiKey)
-		}
+		_ = os.Setenv("GEMINI_API_KEY", apiKey)
 		plugins = append(plugins, &googlegenai.GoogleAI{APIKey: apiKey})
 	default:
 		// Default to GoogleAI plugin
-		if apiKey != "" {
-			_ = os.Setenv("GEMINI_API_KEY", apiKey)
-		}
+		_ = os.Setenv("GEMINI_API_KEY", apiKey)
 		plugins = append(plugins, &googlegenai.GoogleAI{APIKey: apiKey})
 	}
 

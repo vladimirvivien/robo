@@ -85,3 +85,18 @@ func TestTerminalDetection(t *testing.T) {
 		t.Errorf("invalid terminal width: %d", width)
 	}
 }
+
+func TestPromptIndicator(t *testing.T) {
+	indicator := ui.PromptIndicator("daily-2026-08-18")
+	if !strings.Contains(indicator, "daily-2026-08-18") || !strings.Contains(indicator, "❯") {
+		t.Errorf("unexpected prompt indicator: %s", indicator)
+	}
+}
+
+func TestSpinner(t *testing.T) {
+	sp := ui.StartSpinner("Processing test...")
+	sp.UpdateMessage("Still processing...")
+	sp.Stop()
+	// Calling stop twice should be safe
+	sp.Stop()
+}

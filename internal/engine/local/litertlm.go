@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 
@@ -42,29 +40,9 @@ func (e *Engine) Client(ctx context.Context) (*litertlm.Client, error) {
 		return e.client, nil
 	}
 
-	libDir := e.cfg.LibDir
-	modelPath := e.cfg.Model
-
-	// Auto-provision native shared libraries if needed
-	if libDir == "" && e.cfg.AutoDownload {
-		libVersion := e.cfg.LibVersion
-		if libVersion == "" {
-			libVersion = config.DefaultLocalLibVersion
-		}
-		dir, err := litertlm.FetchLib(runtime.GOOS, runtime.GOARCH, libVersion)
-		if err != nil {
-			return nil, fmt.Errorf("local: fetch lib: %w", err)
-		}
-		libDir = dir
-	}
-
-	// Auto-provision model if needed
-	if !filepath.IsAbs(modelPath) && !fileExists(modelPath) && e.cfg.AutoDownload {
-		cachedPath, err := litertlm.FetchModel(ctx, modelPath)
-		if err != nil {
-			return nil, fmt.Errorf("local: fetch model: %w", err)
-		}
-		modelPath = cachedPath
+	libDir, modelPath, err := engine.EnsureLocalSetup(ctx, e.cfg)
+	if err != nil {
+		return nil, err
 	}
 
 	opts := []litertlm.Option{
@@ -77,6 +55,9 @@ func (e *Engine) Client(ctx context.Context) (*litertlm.Client, error) {
 		opts = append(opts, litertlm.WithBackend(e.cfg.Backend))
 	}
 	if e.cfg.CacheDir != "" {
+		if err := os.MkdirAll(e.cfg.CacheDir, 0750); err != nil {
+			return nil, fmt.Errorf("local: create cache dir: %w", err)
+		}
 		opts = append(opts, litertlm.WithCacheDir(e.cfg.CacheDir))
 	}
 
@@ -216,12 +197,4 @@ func formatPrompt(req engine.Request) string {
 
 	sb.WriteString(req.Prompt)
 	return sb.String()
-}
-
-func fileExists(path string) bool {
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	return !info.IsDir()
 }

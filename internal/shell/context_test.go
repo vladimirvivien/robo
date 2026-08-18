@@ -41,7 +41,7 @@ func TestCollector_CollectAndFormat(t *testing.T) {
 	}
 
 	formatted := sc.FormatPromptContext()
-	if !strings.Contains(formatted, "[Ambient Terminal Context]") {
+	if !strings.Contains(formatted, "[Active Environment Context]") {
 		t.Errorf("missing header in formatted context: %s", formatted)
 	}
 	if !strings.Contains(formatted, "go test ./...") {

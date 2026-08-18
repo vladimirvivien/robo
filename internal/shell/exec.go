@@ -13,6 +13,11 @@ var (
 	codeBlockRegex = regexp.MustCompile("(?s)```(?:bash|sh|zsh|fish|powershell|pwsh|cmd)?\\s*\\n(.*?)\\n```")
 )
 
+// StripCodeBlock removes markdown code fences and returns any surrounding text.
+func StripCodeBlock(text string) string {
+	return codeBlockRegex.ReplaceAllString(text, "")
+}
+
 // ExtractProposedCommand extracts a shell command from LLM response text if formatted as code or command block.
 func ExtractProposedCommand(text string) string {
 	trimmed := strings.TrimSpace(text)

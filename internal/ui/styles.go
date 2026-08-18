@@ -8,12 +8,17 @@ import (
 )
 
 var (
-	// Colors
+	// Modern Vibrant Palette
+	colorCyan        = lipgloss.Color("#00F0FF")
+	colorSky         = lipgloss.Color("#38BDF8")
+	colorMagenta     = lipgloss.Color("#F43F5E")
+	colorPurple      = lipgloss.Color("#A855F7")
 	colorLocalGreen  = lipgloss.Color("#10B981")
-	colorCloudBlue   = lipgloss.Color("#3B82F6")
+	colorCloudBlue   = lipgloss.Color("#2563EB")
 	colorWarningGold = lipgloss.Color("#F59E0B")
 	colorErrorRed    = lipgloss.Color("#EF4444")
-	colorDimGray     = lipgloss.Color("#6B7280")
+	colorTextMuted   = lipgloss.Color("#94A3B8")
+	colorDarkBg      = lipgloss.Color("#0F172A")
 
 	// Badge Styles
 	styleLocalBadge = lipgloss.NewStyle().
@@ -43,19 +48,23 @@ var (
 	// Card Styles
 	styleCard = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#4B5563")).
+			BorderForeground(colorCyan).
 			Padding(0, 1).
 			MarginTop(0).
 			MarginBottom(1)
 
+	styleTitle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorSky)
+
 	styleCommand = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#F3F4F6")).
-			Background(lipgloss.Color("#111827")).
+			Foreground(colorCyan).
+			Background(colorDarkBg).
 			Padding(0, 1)
 
 	styleMuted = lipgloss.NewStyle().
-			Foreground(colorDimGray)
+			Foreground(colorTextMuted)
 )
 
 // BadgeLocal renders a styled badge for on-device local engine executions.
@@ -88,7 +97,7 @@ func BadgeError(text string) string {
 func Card(title, content, footer string) string {
 	var sb strings.Builder
 	if title != "" {
-		sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#9CA3AF")).Render(title))
+		sb.WriteString(styleTitle.Render(title))
 		sb.WriteString("\n\n")
 	}
 	sb.WriteString(content)
@@ -105,10 +114,17 @@ func CommandCard(title, command string) string {
 	if title == "" {
 		title = "Proposed Shell Command"
 	}
-	sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(colorCloudBlue).Render(title))
+	sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(colorPurple).Render(title))
 	sb.WriteString("\n\n  ")
 	sb.WriteString(styleCommand.Render(command))
 	return styleCard.Render(sb.String())
+}
+
+// PromptIndicator renders the stylized interactive REPL prompt string.
+func PromptIndicator(sessionName string) string {
+	bracketStyle := lipgloss.NewStyle().Bold(true).Foreground(colorSky)
+	arrowStyle := lipgloss.NewStyle().Bold(true).Foreground(colorMagenta)
+	return fmt.Sprintf("%s %s ", bracketStyle.Render("["+sessionName+"]"), arrowStyle.Render("❯"))
 }
 
 // HeaderBanner formats the engine execution provenance header.

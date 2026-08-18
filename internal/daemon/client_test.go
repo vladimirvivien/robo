@@ -96,7 +96,8 @@ func TestClient_InProcessFallbackWhenDaemonDown(t *testing.T) {
 	statePath := filepath.Join(dir, "nonexistent-robod.json")
 
 	cfg := *config.NewDefaultConfig()
-	cfg.Robod.Enabled = false // disable daemon to force immediate fallback
+	cfg.Robod.Enabled = false                // disable daemon to force immediate fallback
+	cfg.Robod.URL = "http://127.0.0.1:59999" // ensure no background process is intercepted
 
 	client := daemon.NewClient(cfg,
 		daemon.WithStatePath(statePath),

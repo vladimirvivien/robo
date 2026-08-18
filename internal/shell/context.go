@@ -6,12 +6,16 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 )
 
 // Context encapsulates the developer's active terminal, repository, and shell history state.
 type Context struct {
+	OS             string   `json:"os"`
+	Arch           string   `json:"arch"`
+	Shell          Type     `json:"shell"`
 	Cwd            string   `json:"cwd"`
 	GitBranch      string   `json:"git_branch,omitempty"`
 	GitStatus      string   `json:"git_status,omitempty"`
@@ -56,7 +60,10 @@ func (c *Collector) Collect(ctx context.Context, maxHistory int) (*Context, erro
 	}
 
 	sc := &Context{
-		Cwd: dir,
+		OS:    runtime.GOOS,
+		Arch:  runtime.GOARCH,
+		Shell: DetectShell(),
+		Cwd:   dir,
 	}
 
 	// 1. Gather recent shell history
@@ -119,19 +126,25 @@ func collectGitInfo(ctx context.Context, dir string) (string, string) {
 // FormatPromptContext generates a concise, readable block for inclusion in LLM prompts.
 func (c *Context) FormatPromptContext() string {
 	var sb strings.Builder
-	sb.WriteString("[Ambient Terminal Context]\n")
+	sb.WriteString("[Active Environment Context]\n")
+	if c.OS != "" {
+		fmt.Fprintf(&sb, "OS/Architecture: %s (%s)\n", c.OS, c.Arch)
+	}
+	if c.Shell != "" && c.Shell != ShellUnknown {
+		fmt.Fprintf(&sb, "Active Shell: %s\n", c.Shell)
+	}
 	if c.Cwd != "" {
-		fmt.Fprintf(&sb, "Directory: %s\n", c.Cwd)
+		fmt.Fprintf(&sb, "Current Directory: %s\n", c.Cwd)
 	}
 	if c.GitBranch != "" {
 		status := c.GitStatus
 		if status == "" {
 			status = "clean"
 		}
-		fmt.Fprintf(&sb, "Git: %s (%s)\n", c.GitBranch, status)
+		fmt.Fprintf(&sb, "Git Repository: %s (%s)\n", c.GitBranch, status)
 	}
 	if len(c.RecentCommands) > 0 {
-		sb.WriteString("Recent Shell Commands:\n")
+		sb.WriteString("Recent Shell History:\n")
 		for i, cmd := range c.RecentCommands {
 			fmt.Fprintf(&sb, "  %d. %s\n", i+1, cmd)
 		}

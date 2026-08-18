@@ -213,3 +213,65 @@ func TestRouter_Close(t *testing.T) {
 		t.Errorf("expected both engines closed: local=%v, cloud=%v", local.Closed, cloud.Closed)
 	}
 }
+
+func TestRouter_ActiveEscalateSignal_Unary(t *testing.T) {
+	local := engine.NewMockEngine("local")
+	local.GenerateFn = func(ctx context.Context, req engine.Request) (*engine.Response, error) {
+		return &engine.Response{Text: router.EscalateToCloudSignal + " task too complex"}, nil
+	}
+
+	cloud := engine.NewMockEngine("cloud-frontier")
+	cloud.GenerateFn = func(ctx context.Context, req engine.Request) (*engine.Response, error) {
+		return &engine.Response{Text: "cloud solution for complex task"}, nil
+	}
+
+	cfg := config.RoutingConfig{Strategy: "auto", EscalateOnError: true}
+	r := router.NewRouter(local, cloud, cfg)
+
+	resp, err := r.Generate(context.Background(), engine.Request{Prompt: "complex architecture"})
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	if !strings.Contains(resp.Text, "cloud solution") {
+		t.Errorf("expected escalation to cloud on signal, got: %s", resp.Text)
+	}
+}
+
+func TestRouter_ActiveEscalateSignal_Stream(t *testing.T) {
+	local := engine.NewMockEngine("local")
+	local.GenerateStreamFn = func(ctx context.Context, req engine.Request) (<-chan engine.StreamChunk, error) {
+		ch := make(chan engine.StreamChunk, 2)
+		ch <- engine.StreamChunk{Text: router.EscalateToCloudSignal}
+		close(ch)
+		return ch, nil
+	}
+
+	cloud := engine.NewMockEngine("cloud-frontier")
+	cloud.GenerateStreamFn = func(ctx context.Context, req engine.Request) (<-chan engine.StreamChunk, error) {
+		ch := make(chan engine.StreamChunk, 2)
+		ch <- engine.StreamChunk{Text: "streamed cloud answer"}
+		close(ch)
+		return ch, nil
+	}
+
+	cfg := config.RoutingConfig{Strategy: "auto", EscalateOnError: true}
+	r := router.NewRouter(local, cloud, cfg)
+
+	stream, err := r.GenerateStream(context.Background(), engine.Request{Prompt: "complex stream"})
+	if err != nil {
+		t.Fatalf("GenerateStream failed: %v", err)
+	}
+
+	var sb strings.Builder
+	for chunk := range stream {
+		if chunk.Error != nil {
+			t.Fatalf("unexpected chunk error: %v", chunk.Error)
+		}
+		sb.WriteString(chunk.Text)
+	}
+
+	if !strings.Contains(sb.String(), "streamed cloud answer") {
+		t.Errorf("expected escalated cloud stream on signal, got: %s", sb.String())
+	}
+}

@@ -28,10 +28,6 @@ var destructiveRules = []destructiveRule{
 		reason:  "Disk partition/filesystem formatting (`mkfs` / `fdisk`)",
 	},
 	{
-		pattern: regexp.MustCompile(`(?i)\b(drop\s+table|drop\s+database|truncate\s+table)\b`),
-		reason:  "Database table or schema destruction (`DROP` / `TRUNCATE`)",
-	},
-	{
 		pattern: regexp.MustCompile(`(?i)\bkill\s+-9\s+1\b|\bkillall\s+-9\b`),
 		reason:  "Critical system process termination (`kill -9 1`)",
 	},

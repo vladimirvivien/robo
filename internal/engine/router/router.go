@@ -94,6 +94,9 @@ func (r *Router) DecideRoute(req engine.Request) (Strategy, string) {
 	}
 }
 
+// EscalateToCloudSignal is the control tag output by the local SLM when a task exceeds local capacity.
+const EscalateToCloudSignal = "[ESCALATE_TO_CLOUD]"
+
 // Generate dispatches unary generation to local or cloud engine with escalation.
 func (r *Router) Generate(ctx context.Context, req engine.Request) (*engine.Response, error) {
 	strategy, _ := r.DecideRoute(req)
@@ -132,11 +135,21 @@ func (r *Router) Generate(ctx context.Context, req engine.Request) (*engine.Resp
 		if r.local != nil {
 			resp, err := r.local.Generate(ctx, req)
 			if err == nil {
+				// If local model actively signals that task exceeds local capacity, delegate to cloud
+				if strings.HasPrefix(strings.TrimSpace(resp.Text), EscalateToCloudSignal) && r.cloud != nil && r.cfg.EscalateOnError {
+					return r.cloud.Generate(ctx, req)
+				}
 				return resp, nil
 			}
 			if !r.cfg.EscalateOnError || r.cloud == nil {
 				return nil, err
 			}
+			// Attempt cloud fallback
+			cloudResp, cloudErr := r.cloud.Generate(ctx, req)
+			if cloudErr == nil {
+				return cloudResp, nil
+			}
+			return nil, fmt.Errorf("local execution failed (%w); cloud fallback also failed: %v", err, cloudErr)
 		}
 		if r.cloud == nil {
 			return nil, errors.New("router: fallback cloud engine is not available")
@@ -188,6 +201,11 @@ func (r *Router) GenerateStream(ctx context.Context, req engine.Request) (<-chan
 			if !r.cfg.EscalateOnError || r.cloud == nil {
 				return nil, err
 			}
+			cloudStream, cloudErr := r.cloud.GenerateStream(ctx, req)
+			if cloudErr == nil {
+				return cloudStream, nil
+			}
+			return nil, fmt.Errorf("local engine failed (%w); cloud fallback also failed: %v", err, cloudErr)
 		}
 		if r.cloud == nil {
 			return nil, errors.New("router: fallback cloud engine is not available")
@@ -196,47 +214,71 @@ func (r *Router) GenerateStream(ctx context.Context, req engine.Request) (<-chan
 	}
 }
 
-// forwardWithEscalation monitors the primary stream and escalates to fallback engine on immediate failure.
+// forwardWithEscalation monitors the primary stream and escalates to fallback engine on error or [ESCALATE_TO_CLOUD] signal.
 func (r *Router) forwardWithEscalation(ctx context.Context, primary <-chan engine.StreamChunk, fallback engine.Engine, req engine.Request) (<-chan engine.StreamChunk, error) {
 	out := make(chan engine.StreamChunk, 16)
 
 	go func() {
 		defer close(out)
 
-		first := true
-		tokensEmitted := 0
+		var buffer []engine.StreamChunk
+		var accumulated strings.Builder
+		buffered := true
 
 		for chunk := range primary {
-			if first {
-				first = false
-				// If the very first chunk contains an error and no text was emitted, attempt fallback
-				if chunk.Error != nil && r.cfg.EscalateOnError && fallback != nil {
-					fallbackStream, err := fallback.GenerateStream(ctx, req)
+			if chunk.Error != nil {
+				// Immediate failure on stream: if fallback available, escalate
+				if r.cfg.EscalateOnError && fallback != nil && accumulated.Len() == 0 {
+					fbStream, err := fallback.GenerateStream(ctx, req)
 					if err == nil {
-						for fbChunk := range fallbackStream {
+						for fbChunk := range fbStream {
 							out <- fbChunk
 						}
 						return
 					}
 				}
+				out <- chunk
+				return
 			}
 
-			if chunk.Text != "" {
-				tokensEmitted++
+			if buffered {
+				buffer = append(buffer, chunk)
+				accumulated.WriteString(chunk.Text)
+
+				trimmed := strings.TrimSpace(accumulated.String())
+				if strings.HasPrefix(trimmed, EscalateToCloudSignal) {
+					// Active signal detected: discard local buffer and escalate to cloud
+					if r.cfg.EscalateOnError && fallback != nil {
+						fbStream, err := fallback.GenerateStream(ctx, req)
+						if err == nil {
+							for fbChunk := range fbStream {
+								out <- fbChunk
+							}
+							return
+						}
+					}
+				}
+
+				// If accumulated buffer exceeds the signal length and is not a prefix, flush and stop buffering
+				if accumulated.Len() >= len(EscalateToCloudSignal) {
+					buffered = false
+					for _, bChunk := range buffer {
+						out <- bChunk
+					}
+					buffer = nil
+				}
+				continue
 			}
+
 			out <- chunk
 		}
 
-		// If stream was empty and errored without emitting tokens, attempt fallback
-		if first && r.cfg.EscalateOnError && fallback != nil && ctx.Err() == nil {
-			fallbackStream, err := fallback.GenerateStream(ctx, req)
-			if err == nil {
-				for fbChunk := range fallbackStream {
-					out <- fbChunk
-				}
+		// Flush any remaining buffered chunks if stream closed before threshold
+		if buffered && len(buffer) > 0 {
+			for _, bChunk := range buffer {
+				out <- bChunk
 			}
 		}
-		_ = tokensEmitted
 	}()
 
 	return out, nil
