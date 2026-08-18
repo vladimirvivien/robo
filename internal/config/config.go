@@ -26,6 +26,7 @@ const (
 	DefaultOutputMode      = "markdown"
 	DefaultSessionMode     = "daily"
 	DefaultShellAlias      = "ai"
+	DefaultCloudAPIKeyEnv  = "GEMINI_API_KEY"
 )
 
 // Config represents the complete Robo configuration.
@@ -84,11 +85,10 @@ type CloudConfig struct {
 	APIKeyEnv string `yaml:"api_key_env"`
 }
 
-// ShellConfig defines integration settings for Bash/Zsh/Fish/PowerShell.
+// ShellConfig defines ambient context settings for Bash/Zsh/Fish/PowerShell.
 type ShellConfig struct {
-	Alias              string `yaml:"alias"`
-	CaptureLastCommand bool   `yaml:"capture_last_command"`
-	CaptureExitCode    bool   `yaml:"capture_exit_code"`
+	CaptureHistory  bool `yaml:"capture_history"`
+	MaxHistoryLines int  `yaml:"max_history_lines"`
 }
 
 // NewDefaultConfig returns a Config struct initialized with standard defaults.
@@ -121,12 +121,11 @@ func NewDefaultConfig() *Config {
 		Cloud: CloudConfig{
 			Provider:  DefaultCloudProvider,
 			Model:     DefaultCloudModel,
-			APIKeyEnv: "GEMINI_API_KEY",
+			APIKeyEnv: DefaultCloudAPIKeyEnv,
 		},
 		Shell: ShellConfig{
-			Alias:              DefaultShellAlias,
-			CaptureLastCommand: true,
-			CaptureExitCode:    true,
+			CaptureHistory:  true,
+			MaxHistoryLines: 5,
 		},
 	}
 }
