@@ -329,7 +329,9 @@ func (s *Server) handleGenerateStream(w http.ResponseWriter, r *http.Request) {
 
 		data, err := json.Marshal(payload)
 		if err == nil {
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+				return
+			}
 			flusher.Flush()
 		}
 	}

@@ -225,7 +225,7 @@ func TestClient_TLSServerAndClient(t *testing.T) {
 	cfg := *config.NewDefaultConfig()
 	cfg.Robod.URL = httpsURL
 	cfg.Robod.AutoSpawn = false
-	cfg.Robod.TLS.CAFile = certPath
+	cfg.Robod.TLS = &config.TLSConfig{CAFile: certPath}
 
 	client := daemon.NewClient(cfg,
 		daemon.WithLauncher(func() error {

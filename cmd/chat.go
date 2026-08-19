@@ -52,10 +52,17 @@ func runChat(cmd *cobra.Command, args []string) error {
 		ctx = context.Background()
 	}
 
-	// 1. Load configuration
+	// 1. Check if first-time onboarding is needed (no config file on disk and no model downloaded)
+	configExists := config.ConfigFileExists(cfgFile)
 	cfg, err := config.Load(cfgFile)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
+	}
+
+	if !configExists && !engine.IsModelDownloaded(cfg.LLM.Local.Model) {
+		if err := engine.RunInitialSetup(ctx, cfg); err != nil {
+			return err
+		}
 	}
 
 	// 2. Open SQLite history store
@@ -83,11 +90,11 @@ func runChat(cmd *cobra.Command, args []string) error {
 	}
 
 	// 4. Initialize Engines
-	inProcEngine := local.New(cfg.Local)
+	inProcEngine := local.New(cfg.LLM.Local)
 	localClient := daemon.NewClient(*cfg, daemon.WithInProcEngine(inProcEngine))
-	cloudEngine := cloud.New(cfg.Cloud)
+	cloudEngine := cloud.New(cfg.LLM.Cloud)
 
-	r := router.NewRouter(localClient, cloudEngine, cfg.Routing)
+	r := router.NewRouter(localClient, cloudEngine, cfg.LLM)
 	defer func() { _ = r.Close() }()
 
 	// Current model routing override for this chat session
@@ -179,11 +186,13 @@ func runChat(cmd *cobra.Command, args []string) error {
 		}
 
 		// Save user turn in SQLite
-		userMsg, _ := store.AppendMessage(ctx, currentSession.ID, history.Message{
+		if _, err := store.AppendMessage(ctx, currentSession.ID, history.Message{
 			Role:      "user",
 			Content:   line,
 			CreatedAt: time.Now().UTC(),
-		})
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "history warning: %v\n", err)
+		}
 
 		stream, err := r.GenerateStream(ctx, req)
 		if err != nil {
@@ -217,26 +226,29 @@ func runChat(cmd *cobra.Command, args []string) error {
 		}
 
 		// Save assistant turn in SQLite
-		usedLocal := activeBackend == "local-only" || (activeBackend == "" && cfg.Routing.Strategy != "cloud-only")
-		providerName := cfg.Local.Provider
-		modelName := cfg.Local.Model
+		usedLocal := activeBackend == "local-only" || (activeBackend == "" && cfg.LLM.Local.Enabled)
+		providerName := cfg.LLM.Local.Provider
+		modelName := cfg.LLM.Local.Model
 		if !usedLocal {
-			providerName = cfg.Cloud.Provider
-			modelName = cfg.Cloud.Model
+			providerName = cfg.LLM.Cloud.Provider
+			modelName = cfg.LLM.Cloud.Model
 		}
 
-		_ = userMsg
-		_, _ = store.AppendMessage(ctx, currentSession.ID, history.Message{
+		if _, err := store.AppendMessage(ctx, currentSession.ID, history.Message{
 			Role:       "assistant",
 			Content:    fullResponse.String(),
 			Provider:   providerName,
 			Model:      modelName,
 			TokensUsed: tokensUsed,
 			CreatedAt:  time.Now().UTC(),
-		})
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "history warning: %v\n", err)
+		}
 
 		// Check and handle proposed actions / commands
-		_ = handleProposedAction(ctx, cfg, fullResponse.String(), true)
+		if err := handleProposedAction(ctx, cfg, fullResponse.String(), true); err != nil {
+			fmt.Fprintf(os.Stderr, "action error: %v\n", err)
+		}
 	}
 
 	return scanner.Err()
@@ -273,10 +285,10 @@ func handleSlashCommand(
 		if len(parts) < 2 {
 			currentMode := *activeBackend
 			if currentMode == "" {
-				currentMode = fmt.Sprintf("auto (configured: %s)", cfg.Routing.Strategy)
+				currentMode = "auto"
 			}
 			fmt.Printf("Active Backend: %s\nLocal SLM:      %s (%s)\nCloud LLM:      %s (%s)\n",
-				currentMode, cfg.Local.Model, cfg.Local.Provider, cfg.Cloud.Model, cfg.Cloud.Provider)
+				currentMode, cfg.LLM.Local.Model, cfg.LLM.Local.Provider, cfg.LLM.Cloud.Model, cfg.LLM.Cloud.Provider)
 			return true, false
 		}
 
@@ -288,14 +300,14 @@ func handleSlashCommand(
 				return true, false
 			}
 			*activeBackend = "local-only"
-			fmt.Printf("Routing backend set to: %s\n", ui.BadgeLocal("local-only: "+cfg.Local.Model))
+			fmt.Printf("Routing backend set to: %s\n", ui.BadgeLocal("local-only: "+cfg.LLM.Local.Model))
 		case "cloud", "cloud-only", "c":
 			if err := engine.ValidateInferenceSetup(cfg, "cloud-only"); err != nil {
 				fmt.Println(ui.ErrorCard(err.Error()))
 				return true, false
 			}
 			*activeBackend = "cloud-only"
-			fmt.Printf("Routing backend set to: %s\n", ui.BadgeCloud("cloud-only: "+cfg.Cloud.Model))
+			fmt.Printf("Routing backend set to: %s\n", ui.BadgeCloud("cloud-only: "+cfg.LLM.Cloud.Model))
 		case "auto", "a":
 			*activeBackend = ""
 			fmt.Printf("Routing backend restored to: %s\n", ui.BadgeCloud("auto (hybrid)"))

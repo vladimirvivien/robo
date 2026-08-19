@@ -51,7 +51,9 @@ func (s *Spinner) run() {
 	s.mu.Lock()
 	initialMsg := s.message
 	s.mu.Unlock()
-	_, _ = fmt.Fprintf(s.out, "\r%s %s", styleSpinner.Render(spinnerFrames[0]), styleSpinnerText.Render(initialMsg))
+	if _, err := fmt.Fprintf(s.out, "\r%s %s", styleSpinner.Render(spinnerFrames[0]), styleSpinnerText.Render(initialMsg)); err != nil {
+		return
+	}
 
 	ticker := time.NewTicker(80 * time.Millisecond)
 	defer ticker.Stop()
@@ -61,7 +63,9 @@ func (s *Spinner) run() {
 		select {
 		case <-s.stopCh:
 			// Clear spinner line
-			_, _ = fmt.Fprint(s.out, "\r\033[K")
+			if _, err := fmt.Fprint(s.out, "\r\033[K"); err != nil {
+				return
+			}
 			return
 		case <-ticker.C:
 			s.mu.Lock()
@@ -71,13 +75,18 @@ func (s *Spinner) run() {
 			frame := spinnerFrames[frameIdx%len(spinnerFrames)]
 			frameIdx++
 
-			_, _ = fmt.Fprintf(s.out, "\r%s %s", styleSpinner.Render(frame), styleSpinnerText.Render(msg))
+			if _, err := fmt.Fprintf(s.out, "\r%s %s", styleSpinner.Render(frame), styleSpinnerText.Render(msg)); err != nil {
+				return
+			}
 		}
 	}
 }
 
 // UpdateMessage changes the status text displayed next to the spinner.
 func (s *Spinner) UpdateMessage(msg string) {
+	if s == nil {
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.message = msg
@@ -85,6 +94,9 @@ func (s *Spinner) UpdateMessage(msg string) {
 
 // Stop halts the spinner and clears its terminal line.
 func (s *Spinner) Stop() {
+	if s == nil {
+		return
+	}
 	s.mu.Lock()
 	if s.stopped {
 		s.mu.Unlock()

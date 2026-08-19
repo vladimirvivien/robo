@@ -39,6 +39,12 @@ var (
 				Background(colorWarningGold).
 				Padding(0, 1)
 
+	styleSuccessBadge = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("#FFFFFF")).
+				Background(colorLocalGreen).
+				Padding(0, 1)
+
 	styleErrorBadge = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("#FFFFFF")).
@@ -88,6 +94,11 @@ func BadgeWarning(text string) string {
 	return styleWarningBadge.Render(text)
 }
 
+// BadgeSuccess renders a success badge.
+func BadgeSuccess(text string) string {
+	return styleSuccessBadge.Render(text)
+}
+
 // BadgeError renders an error badge.
 func BadgeError(text string) string {
 	return styleErrorBadge.Render(text)
@@ -97,7 +108,11 @@ func BadgeError(text string) string {
 func Card(title, content, footer string) string {
 	var sb strings.Builder
 	if title != "" {
-		sb.WriteString(styleTitle.Render(title))
+		if strings.Contains(title, "\x1b[") {
+			sb.WriteString(title)
+		} else {
+			sb.WriteString(styleTitle.Render(title))
+		}
 		sb.WriteString("\n\n")
 	}
 	sb.WriteString(content)
@@ -106,6 +121,12 @@ func Card(title, content, footer string) string {
 		sb.WriteString(styleMuted.Render(footer))
 	}
 	return styleCard.Render(sb.String())
+}
+
+// CleanResponseText strips internal routing signals (such as [ESCALATE_TO_CLOUD]) and cleans whitespace.
+func CleanResponseText(text string) string {
+	cleaned := strings.ReplaceAll(text, "[ESCALATE_TO_CLOUD]", "")
+	return strings.TrimSpace(cleaned)
 }
 
 // CommandCard formats a proposed shell command with review framing.

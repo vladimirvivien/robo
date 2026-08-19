@@ -84,3 +84,24 @@ func PromptConfirm(title string) (bool, error) {
 
 	return confirmed, nil
 }
+
+// PromptModelSelection prompts the user to select an on-device model during initial setup.
+func PromptModelSelection() (string, error) {
+	var selected string
+
+	selectField := huh.NewSelect[string]().
+		Title("Select an on-device model to download:").
+		Description("Robo runs locally on your machine using Google LiteRT-LM. Choose a model size:").
+		Options(
+			huh.NewOption("Gemma 4 2B (Recommended — Fast & Lightweight ~2.6 GB)", "litert-community/gemma-4-E2B-it"),
+			huh.NewOption("Gemma 4 4B (Higher Capability — ~4.8 GB)", "litert-community/gemma-4-E4B-it"),
+		).
+		Value(&selected)
+
+	form := huh.NewForm(huh.NewGroup(selectField))
+	if err := form.Run(); err != nil {
+		return "", err
+	}
+
+	return selected, nil
+}

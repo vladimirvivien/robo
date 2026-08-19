@@ -64,10 +64,17 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		ctx = context.Background()
 	}
 
-	// 1. Load configuration
+	// 1. Check if first-time onboarding is needed (no config file on disk and no model downloaded)
+	configExists := config.ConfigFileExists(cfgFile)
 	cfg, err := config.Load(cfgFile)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
+	}
+
+	if !configExists && !engine.IsModelDownloaded(cfg.LLM.Local.Model) {
+		if err := engine.RunInitialSetup(ctx, cfg); err != nil {
+			return err
+		}
 	}
 
 	// 2. Read prompt and stdin
@@ -91,8 +98,13 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	}
 
-	// 3. Start visual spinner immediately upon one-shot prompt receipt
-	isInteractive := ui.IsStdoutTerminal() && flagOutput == "markdown"
+	// 3. Validate output format early
+	if _, err := ui.NewFormatter(flagOutput, false, 80); err != nil {
+		return err
+	}
+
+	// 4. Start visual spinner immediately upon one-shot prompt receipt
+	isInteractive := ui.IsStdoutTerminal() && (flagOutput == "markdown" || flagOutput == "md" || flagOutput == "")
 	var sp *ui.Spinner
 	if isInteractive {
 		sp = ui.StartSpinner("Working...")
@@ -150,11 +162,11 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	}
 
 	// 6. Construct engines
-	inProcEngine := local.New(cfg.Local)
+	inProcEngine := local.New(cfg.LLM.Local)
 	localClient := daemon.NewClient(*cfg, daemon.WithInProcEngine(inProcEngine))
-	cloudEngine := cloud.New(cfg.Cloud)
+	cloudEngine := cloud.New(cfg.LLM.Cloud)
 
-	r := router.NewRouter(localClient, cloudEngine, cfg.Routing)
+	r := router.NewRouter(localClient, cloudEngine, cfg.LLM)
 	defer func() { _ = r.Close() }()
 
 	// 7. Build request
@@ -194,44 +206,55 @@ func runRoot(cmd *cobra.Command, args []string) error {
 
 	for chunk := range stream {
 		if chunk.Error != nil {
-			sp.Stop()
+			if sp != nil {
+				sp.Stop()
+			}
 			fmt.Fprintf(os.Stderr, "\n[stream error]: %v\n", chunk.Error)
 			return chunk.Error
 		}
 		fullText.WriteString(chunk.Text)
 	}
-	sp.Stop()
-
-	rawResponse := fullText.String()
-	cmdStr := shell.ExtractProposedCommand(rawResponse)
-
-	if isInteractive {
-		if cmdStr == "" {
-			// No command to execute: render full response as markdown
-			rendered, _ := ui.RenderMarkdown(rawResponse, ui.TerminalWidth())
-			fmt.Print(rendered)
-		} else {
-			// Command proposed: render any explanatory text outside the code block
-			explanation := strings.TrimSpace(shell.StripCodeBlock(rawResponse))
-			if explanation != "" {
-				rendered, _ := ui.RenderMarkdown(explanation, ui.TerminalWidth())
-				fmt.Print(rendered)
-			}
-		}
-	} else {
-		// Non-interactive / scripted output
-		if flagOutput == "code" && cmdStr != "" {
-			fmt.Println(cmdStr)
-		} else {
-			fmt.Print(rawResponse)
-			if !strings.HasSuffix(rawResponse, "\n") {
-				fmt.Println()
-			}
-		}
+	if sp != nil {
+		sp.Stop()
 	}
 
-	// 7. Check for proposed shell command and handle execution review
-	return handleProposedAction(ctx, cfg, rawResponse, isInteractive)
+	rawResponse := fullText.String()
+	cleaned := ui.CleanResponseText(rawResponse)
+	cmdStr := shell.ExtractProposedCommand(cleaned)
+	explanation := strings.TrimSpace(shell.StripCodeBlock(cleaned))
+
+	usedLocal := flagLocal || (!flagCloud && cfg.LLM.Local.Enabled)
+	providerName := cfg.LLM.Local.Provider
+	modelName := cfg.LLM.Local.Model
+	if !usedLocal {
+		providerName = cfg.LLM.Cloud.Provider
+		modelName = cfg.LLM.Cloud.Model
+	}
+
+	formatter, err := ui.NewFormatter(flagOutput, isInteractive, ui.TerminalWidth())
+	if err != nil {
+		return err
+	}
+
+	outputData := ui.OutputData{
+		Response:    cleaned,
+		Explanation: explanation,
+		Command:     cmdStr,
+		Provider:    providerName,
+		Model:       modelName,
+		Local:       usedLocal,
+	}
+
+	if err := formatter.Format(os.Stdout, outputData); err != nil {
+		return err
+	}
+
+	// 7. Check for proposed shell command and handle execution review in interactive mode
+	if isInteractive && cmdStr != "" {
+		return handleProposedAction(ctx, cfg, cleaned, true)
+	}
+
+	return nil
 }
 
 func handleProposedAction(ctx context.Context, cfg *config.Config, responseText string, isInteractive bool) error {

@@ -117,17 +117,23 @@ func runDaemonStart(cmd *cobra.Command, args []string) error {
 	}
 
 	// Foreground execution
-	eng := local.New(cfg.Local)
+	eng := local.New(cfg.LLM.Local)
 	defer func() { _ = eng.Close() }()
+
+	var tlsCert, tlsKey string
+	if cfg.Robod.TLS != nil {
+		tlsCert = cfg.Robod.TLS.CertFile
+		tlsKey = cfg.Robod.TLS.KeyFile
+	}
 
 	serverOpts := daemon.ServerOptions{
 		URL:       cfg.Robod.URL,
 		AuthToken: cfg.Robod.AuthToken,
-		ModelName: cfg.Local.Model,
+		ModelName: cfg.LLM.Local.Model,
 		StatePath: daemon.StatePath(),
 		IdleTTL:   cfg.Robod.IdleTTL,
-		TLSCert:   cfg.Robod.TLS.CertFile,
-		TLSKey:    cfg.Robod.TLS.KeyFile,
+		TLSCert:   tlsCert,
+		TLSKey:    tlsKey,
 	}
 
 	server, err := daemon.NewServer(eng, serverOpts)

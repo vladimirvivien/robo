@@ -12,104 +12,102 @@ import (
 
 // Default constants for configuration
 const (
-	DefaultConfigDir       = ".config/robo"
-	DefaultConfigFile      = "config.yaml"
-	DefaultLocalModel      = "litert-community/gemma-4-E2B-it-litert-lm/gemma-4-E2B-it.litertlm"
-	DefaultLocalLibVersion = "v0.16.0"
-	DefaultCloudModel      = "googleai/gemini-2.5-flash"
-	DefaultCloudProvider   = "googleai"
-	DefaultLocalBackend    = "gpu"
-	DefaultRoutingStrategy = "auto"
-	DefaultMaxLocalTokens  = 4096
-	DefaultRobodURL        = "http://127.0.0.1:8765"
-	DefaultRobodIdleTTL    = 15 * time.Minute
-	DefaultOutputMode      = "markdown"
-	DefaultSessionMode     = "daily"
-	DefaultShellAlias      = "ai"
-	DefaultCloudAPIKeyEnv  = "GEMINI_API_KEY"
+	DefaultConfigDir      = ".config/robo"
+	DefaultConfigFile     = "config.yaml"
+	DefaultLocalModel     = "litert-community/gemma-4-E2B-it"
+	DefaultLocalVersion   = "v0.16.0"
+	DefaultCloudModel     = "googleai/gemini-2.5-flash"
+	DefaultCloudProvider  = "googleai"
+	DefaultLocalBackend   = "gpu"
+	DefaultMaxLocalTokens = 4096
+	DefaultRobodURL       = "http://127.0.0.1:8765"
+	DefaultRobodIdleTTL   = 15 * time.Minute
+	DefaultOutputMode     = "markdown"
+	DefaultSessionMode    = "daily"
+	DefaultShellAlias     = "ai"
+	DefaultCloudAPIKeyEnv = "GEMINI_API_KEY"
 
-	DefaultRoboSystemPrompt = `You are Robo, an on-device AI terminal and shell assistant running directly on the user's workstation.
+	DefaultRoboSystemPrompt = `You are Robo, an on-device AI assistant agent designed to interact directly with the local operating system.
 
-Core Role & Scope:
-- Your primary purpose is to assist with shell interactions, terminal commands, workflow automation, and diagnosing terminal errors.
-- You specialize in synthesizing shell commands, explaining CLI tools, inspecting files, and writing small automation scripts (e.g., Bash, PowerShell, Python).
-- You are NOT designed to write or architect large complete software projects from scratch; focus strictly on shell-centric tasks and localized automation.
+Core Purpose & Capabilities:
+You assist users by generating safe, precise shell commands and scripts across three operational domains:
+1. Query Commands: Inspect system state, search/read files, check hardware/resources, inspect processes, and query environment settings.
+2. Executive Commands: Create/edit files, run builds, invoke installed CLI/MCP tools, process data, and automate workflows.
+3. Control Commands: Manage service and process lifecycles, configure environment state, and control runtime execution.
 
-Platform & Shell Awareness:
-- Always synthesize commands matching the user's active OS, architecture, and shell provided in the environment context.
-- On Windows (PowerShell), always use valid PowerShell cmdlets and syntax (e.g., use "Get-ChildItem" or "dir" instead of Unix flags like "ls -la" or "ls -F", "Remove-Item" instead of "rm -rf", "New-Item" instead of "touch").
-- On Linux/macOS (Bash/Zsh), use standard POSIX / Unix syntax.
-
-Hybrid Routing Awareness:
-- You operate as the fast on-device tier of a hybrid AI setup with automatic cloud escalation.
-- If a user prompt requests complex multi-step reasoning, large software architecture, or tasks that exceed the capacity of a lightweight local model, output the tag [ESCALATE_TO_CLOUD] at the very beginning of your response to signal the router to delegate the task to the cloud model.
+Execution & Platform Rules:
+- Synthesize commands matching the active OS, architecture, and shell provided in the runtime context.
+- Windows (PowerShell): Use idiomatic cmdlets (e.g., Get-ChildItem, Set-Content, Start-Process, Stop-Process).
+- Linux / macOS (POSIX/Bash/Zsh): Use standard Unix commands and utilities.
+- Propose shell commands inside a single markdown code block with the appropriate shell identifier (e.g. ` + "```powershell" + ` or ` + "```bash" + `).
 
 Guidelines:
-1. Identity: When asked who you are or what your name is, clearly state that your name is Robo.
-2. Tone: Direct, instructive, concise, and developer-to-developer. Avoid generic fluff or boilerplate.
-3. Shell Commands: When proposing commands or scripts, format them in markdown code blocks with the appropriate language tag (e.g. ` + "```powershell" + ` or ` + "```bash" + `). Keep actions precise and safe.`
+1. Tone: Direct, concise, and developer-to-developer without conversational fluff or apologies.
+2. Safety: Ensure all generated commands are safe to run and respect the user's working environment.
+3. Action-Oriented: Directly provide complete, functional commands tailored to the user's specific request.`
 )
 
 // Config represents the complete Robo configuration.
 type Config struct {
-	OutputMode     string        `yaml:"output_mode"`
-	DefaultSession string        `yaml:"default_session"`
-	Routing        RoutingConfig `yaml:"routing"`
-	Local          LocalConfig   `yaml:"local"`
-	Robod          RobodConfig   `yaml:"robod"`
-	Cloud          CloudConfig   `yaml:"cloud"`
-	Shell          ShellConfig   `yaml:"shell"`
+	OutputMode     string      `yaml:"output_mode,omitempty"`
+	DefaultSession string      `yaml:"default_session,omitempty"`
+	LLM            LLMConfig   `yaml:"llm"`
+	Robod          RobodConfig `yaml:"robod"`
+	Shell          ShellConfig `yaml:"shell"`
 }
 
-// RoutingConfig controls hybrid model routing decisions.
-type RoutingConfig struct {
-	Strategy        string `yaml:"strategy"` // "auto", "local-first", "cloud-first", "local-only", "cloud-only"
-	EscalateOnError bool   `yaml:"escalate_on_error"`
-	MaxLocalTokens  int    `yaml:"max_local_tokens"`
+// LLMConfig controls model configuration and routing.
+type LLMConfig struct {
+	AutoRoute      bool        `yaml:"auto_route"`
+	MaxLocalTokens int         `yaml:"max_local_tokens,omitempty"`
+	Local          LocalConfig `yaml:"local"`
+	Cloud          CloudConfig `yaml:"cloud,omitempty"`
 }
 
 // LocalConfig defines settings for the on-device LiteRT-LM engine.
 type LocalConfig struct {
-	Provider     string `yaml:"provider"` // "litertlm"
+	Enabled      bool   `yaml:"enabled"`
+	Provider     string `yaml:"provider,omitempty"` // "litertlm"
 	Model        string `yaml:"model"`
-	Backend      string `yaml:"backend"` // "gpu", "cpu"
+	Backend      string `yaml:"backend,omitempty"` // "gpu", "cpu"
 	AutoDownload bool   `yaml:"auto_download"`
-	CacheDir     string `yaml:"cache_dir"`
-	LibDir       string `yaml:"lib_dir"`
-	LibVersion   string `yaml:"lib_version"`
+	CacheDir     string `yaml:"cache_dir,omitempty"`
+	LibDir       string `yaml:"lib_dir,omitempty"`
+	Version      string `yaml:"version,omitempty"`
 }
 
 // RobodConfig defines settings for the hot-start background robod daemon.
 type RobodConfig struct {
 	Enabled   bool          `yaml:"enabled"`
-	URL       string        `yaml:"url"`        // Unified endpoint URL (e.g. "http://127.0.0.1:8765" or "https://gpu-box:8765")
-	AuthToken string        `yaml:"auth_token"` // Optional pre-shared auth token
-	AutoSpawn bool          `yaml:"auto_spawn"` // Auto-spawn background process if URL points to localhost
-	IdleTTL   time.Duration `yaml:"idle_ttl"`
-	TLS       TLSConfig     `yaml:"tls"`
+	URL       string        `yaml:"url,omitempty"`
+	AuthToken string        `yaml:"auth_token,omitempty"`
+	AutoSpawn bool          `yaml:"auto_spawn"`
+	IdleTTL   time.Duration `yaml:"idle_ttl,omitempty"`
+	TLS       *TLSConfig    `yaml:"tls,omitempty"`
 }
 
 // TLSConfig defines transport security parameters for robod HTTPS connections.
 type TLSConfig struct {
-	CertFile           string `yaml:"cert_file"`
-	KeyFile            string `yaml:"key_file"`
-	CAFile             string `yaml:"ca_file"`
-	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"`
+	CertFile           string `yaml:"cert_file,omitempty"`
+	KeyFile            string `yaml:"key_file,omitempty"`
+	CAFile             string `yaml:"ca_file,omitempty"`
+	InsecureSkipVerify bool   `yaml:"insecure_skip_verify,omitempty"`
 }
 
 // CloudConfig defines settings for the Genkit cloud engine.
 type CloudConfig struct {
-	Provider  string `yaml:"provider"` // "googleai", "anthropic", "openai"
-	Model     string `yaml:"model"`
-	BaseURL   string `yaml:"base_url"`
-	APIKey    string `yaml:"api_key"`
-	APIKeyEnv string `yaml:"api_key_env"`
+	Enabled   bool   `yaml:"enabled"`
+	Provider  string `yaml:"provider,omitempty"` // "googleai", "anthropic", "openai"
+	Model     string `yaml:"model,omitempty"`
+	BaseURL   string `yaml:"base_url,omitempty"`
+	APIKey    string `yaml:"api_key,omitempty"`
+	APIKeyEnv string `yaml:"api_key_env,omitempty"`
 }
 
 // ShellConfig defines ambient context and execution settings for Bash/Zsh/Fish/PowerShell.
 type ShellConfig struct {
 	CaptureHistory  bool `yaml:"capture_history"`
-	MaxHistoryLines int  `yaml:"max_history_lines"`
+	MaxHistoryLines int  `yaml:"max_history_lines,omitempty"`
 	AutoAccept      bool `yaml:"auto_accept"`
 	YoloApproveAll  bool `yaml:"yolo_approve_all"`
 }
@@ -122,29 +120,30 @@ func NewDefaultConfig() *Config {
 	return &Config{
 		OutputMode:     DefaultOutputMode,
 		DefaultSession: DefaultSessionMode,
-		Routing: RoutingConfig{
-			Strategy:        DefaultRoutingStrategy,
-			EscalateOnError: true,
-			MaxLocalTokens:  DefaultMaxLocalTokens,
-		},
-		Local: LocalConfig{
-			Provider:     "litertlm",
-			Model:        DefaultLocalModel,
-			Backend:      DefaultLocalBackend,
-			AutoDownload: true,
-			CacheDir:     filepath.Join(configDir, "cache"),
-			LibVersion:   DefaultLocalLibVersion,
+		LLM: LLMConfig{
+			AutoRoute:      true,
+			MaxLocalTokens: DefaultMaxLocalTokens,
+			Local: LocalConfig{
+				Enabled:      true,
+				Provider:     "litertlm",
+				Model:        DefaultLocalModel,
+				Backend:      DefaultLocalBackend,
+				AutoDownload: true,
+				CacheDir:     filepath.Join(configDir, "cache"),
+				Version:      DefaultLocalVersion,
+			},
+			Cloud: CloudConfig{
+				Enabled:   true,
+				Provider:  DefaultCloudProvider,
+				Model:     DefaultCloudModel,
+				APIKeyEnv: DefaultCloudAPIKeyEnv,
+			},
 		},
 		Robod: RobodConfig{
 			Enabled:   true,
 			URL:       DefaultRobodURL,
 			AutoSpawn: true,
 			IdleTTL:   DefaultRobodIdleTTL,
-		},
-		Cloud: CloudConfig{
-			Provider:  DefaultCloudProvider,
-			Model:     DefaultCloudModel,
-			APIKeyEnv: DefaultCloudAPIKeyEnv,
 		},
 		Shell: ShellConfig{
 			CaptureHistory:  true,
@@ -160,6 +159,15 @@ func ConfigPath() string {
 		return DefaultConfigFile
 	}
 	return filepath.Join(home, ".config", "robo", DefaultConfigFile)
+}
+
+// ConfigFileExists returns true if a config file is present on disk at path (or default path if empty).
+func ConfigFileExists(path string) bool {
+	if path == "" {
+		path = ConfigPath()
+	}
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // Load reads and parses the configuration file at the given path, or the default
@@ -213,31 +221,39 @@ func (c *Config) Save(path string) error {
 
 // applyEnvOverrides merges environment variables into configuration fields.
 func (c *Config) applyEnvOverrides() {
-	if env := os.Getenv("ROBO_ROUTING_STRATEGY"); env != "" {
-		c.Routing.Strategy = env
+	if env := os.Getenv("ROBO_LLM_AUTO_ROUTE"); env != "" {
+		c.LLM.AutoRoute = env == "1" || strings.ToLower(env) == "true"
+	}
+	if env := os.Getenv("ROBO_LOCAL_ENABLED"); env != "" {
+		c.LLM.Local.Enabled = env == "1" || strings.ToLower(env) == "true"
 	}
 	if env := os.Getenv("ROBO_LOCAL_MODEL"); env != "" {
-		c.Local.Model = env
+		c.LLM.Local.Model = env
 	}
 	if env := os.Getenv("ROBO_LOCAL_BACKEND"); env != "" {
-		c.Local.Backend = env
+		c.LLM.Local.Backend = env
 	}
-	if env := os.Getenv("ROBO_CLOUD_MODEL"); env != "" {
-		c.Cloud.Model = env
-	}
-	if env := os.Getenv("ROBO_CLOUD_PROVIDER"); env != "" {
-		c.Cloud.Provider = env
+	if env := os.Getenv("ROBO_LOCAL_VERSION"); env != "" {
+		c.LLM.Local.Version = env
+	} else if env := os.Getenv("ROBO_LOCAL_LIB_VERSION"); env != "" {
+		c.LLM.Local.Version = env
+	} else if env := os.Getenv("LITERTLM_LIB_VERSION"); env != "" {
+		c.LLM.Local.Version = env
 	}
 	if env := os.Getenv("LITERTLM_LIB"); env != "" {
-		c.Local.LibDir = env
+		c.LLM.Local.LibDir = env
 	}
-	if env := os.Getenv("ROBO_LOCAL_LIB_VERSION"); env != "" {
-		c.Local.LibVersion = env
-	} else if env := os.Getenv("LITERTLM_LIB_VERSION"); env != "" {
-		c.Local.LibVersion = env
+	if env := os.Getenv("ROBO_CLOUD_ENABLED"); env != "" {
+		c.LLM.Cloud.Enabled = env == "1" || strings.ToLower(env) == "true"
+	}
+	if env := os.Getenv("ROBO_CLOUD_MODEL"); env != "" {
+		c.LLM.Cloud.Model = env
+	}
+	if env := os.Getenv("ROBO_CLOUD_PROVIDER"); env != "" {
+		c.LLM.Cloud.Provider = env
 	}
 	if env := os.Getenv("ROBO_CLOUD_BASE_URL"); env != "" {
-		c.Cloud.BaseURL = env
+		c.LLM.Cloud.BaseURL = env
 	}
 	if env := os.Getenv("ROBO_ROBOD_URL"); env != "" {
 		c.Robod.URL = env
@@ -249,16 +265,25 @@ func (c *Config) applyEnvOverrides() {
 	} else if env := os.Getenv("ROBO_DAEMON_TOKEN"); env != "" {
 		c.Robod.AuthToken = env
 	}
+	ensureTLS := func() {
+		if c.Robod.TLS == nil {
+			c.Robod.TLS = &TLSConfig{}
+		}
+	}
 	if env := os.Getenv("ROBO_ROBOD_TLS_CERT"); env != "" {
+		ensureTLS()
 		c.Robod.TLS.CertFile = env
 	}
 	if env := os.Getenv("ROBO_ROBOD_TLS_KEY"); env != "" {
+		ensureTLS()
 		c.Robod.TLS.KeyFile = env
 	}
 	if env := os.Getenv("ROBO_ROBOD_TLS_CA"); env != "" {
+		ensureTLS()
 		c.Robod.TLS.CAFile = env
 	}
 	if env := os.Getenv("ROBO_ROBOD_TLS_INSECURE"); env == "1" || strings.ToLower(env) == "true" {
+		ensureTLS()
 		c.Robod.TLS.InsecureSkipVerify = true
 	}
 	if env := os.Getenv("ROBO_AUTO_ACCEPT"); env == "1" || strings.ToLower(env) == "true" {
@@ -269,23 +294,23 @@ func (c *Config) applyEnvOverrides() {
 	}
 
 	// Resolve API key from environment variable name if configured
-	if c.Cloud.APIKeyEnv != "" && c.Cloud.APIKey == "" {
-		c.Cloud.APIKey = os.Getenv(c.Cloud.APIKeyEnv)
+	if c.LLM.Cloud.APIKeyEnv != "" && c.LLM.Cloud.APIKey == "" {
+		c.LLM.Cloud.APIKey = os.Getenv(c.LLM.Cloud.APIKeyEnv)
 	}
-	if c.Cloud.APIKey == "" {
+	if c.LLM.Cloud.APIKey == "" {
 		// Fallback check standard provider envs
-		switch strings.ToLower(c.Cloud.Provider) {
+		switch strings.ToLower(c.LLM.Cloud.Provider) {
 		case "googleai", "gemini":
 			if key := os.Getenv("GEMINI_API_KEY"); key != "" {
-				c.Cloud.APIKey = key
+				c.LLM.Cloud.APIKey = key
 			}
 		case "anthropic", "claude":
 			if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
-				c.Cloud.APIKey = key
+				c.LLM.Cloud.APIKey = key
 			}
 		case "openai":
 			if key := os.Getenv("OPENAI_API_KEY"); key != "" {
-				c.Cloud.APIKey = key
+				c.LLM.Cloud.APIKey = key
 			}
 		}
 	}

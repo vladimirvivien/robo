@@ -66,22 +66,22 @@ func WithHTTPClient(client *http.Client) ClientOption {
 
 // NewClient creates a new daemon Client with optional TLS support.
 func NewClient(cfg config.Config, opts ...ClientOption) *Client {
-	tlsConfig := &tls.Config{
-		InsecureSkipVerify: cfg.Robod.TLS.InsecureSkipVerify, //nolint:gosec
-	}
+	transport := &http.Transport{}
+	if cfg.Robod.TLS != nil {
+		tlsConfig := &tls.Config{
+			InsecureSkipVerify: cfg.Robod.TLS.InsecureSkipVerify, //nolint:gosec
+		}
 
-	if cfg.Robod.TLS.CAFile != "" {
-		caData, err := os.ReadFile(cfg.Robod.TLS.CAFile)
-		if err == nil {
-			pool := x509.NewCertPool()
-			if pool.AppendCertsFromPEM(caData) {
-				tlsConfig.RootCAs = pool
+		if cfg.Robod.TLS.CAFile != "" {
+			caData, err := os.ReadFile(cfg.Robod.TLS.CAFile)
+			if err == nil {
+				pool := x509.NewCertPool()
+				if pool.AppendCertsFromPEM(caData) {
+					tlsConfig.RootCAs = pool
+				}
 			}
 		}
-	}
-
-	transport := &http.Transport{
-		TLSClientConfig: tlsConfig,
+		transport.TLSClientConfig = tlsConfig
 	}
 
 	c := &Client{

@@ -20,24 +20,17 @@ const (
 	StrategyLocalOnly Strategy = "local-only"
 	// StrategyCloudOnly restricts execution strictly to cloud frontier models.
 	StrategyCloudOnly Strategy = "cloud-only"
-	// StrategyLocalFirst prioritizes local engine with fallback.
-	StrategyLocalFirst Strategy = "local-first"
-	// StrategyCloudFirst prioritizes cloud engine with fallback.
-	StrategyCloudFirst Strategy = "cloud-first"
 )
 
 // Router coordinates between local and cloud engines based on rules and heuristics.
 type Router struct {
 	local engine.Engine
 	cloud engine.Engine
-	cfg   config.RoutingConfig
+	cfg   config.LLMConfig
 }
 
 // NewRouter creates a new hybrid Router instance.
-func NewRouter(local engine.Engine, cloud engine.Engine, cfg config.RoutingConfig) *Router {
-	if cfg.Strategy == "" {
-		cfg.Strategy = string(StrategyAuto)
-	}
+func NewRouter(local engine.Engine, cloud engine.Engine, cfg config.LLMConfig) *Router {
 	if cfg.MaxLocalTokens <= 0 {
 		cfg.MaxLocalTokens = 4096
 	}
@@ -64,34 +57,33 @@ func (r *Router) DecideRoute(req engine.Request) (Strategy, string) {
 		return StrategyCloudOnly, "explicit flag: --cloud-only"
 	}
 
-	// 2. Global configuration strategy overrides
-	switch Strategy(strings.ToLower(r.cfg.Strategy)) {
-	case StrategyLocalOnly:
-		return StrategyLocalOnly, "configuration: strategy is local-only"
-	case StrategyCloudOnly:
-		return StrategyCloudOnly, "configuration: strategy is cloud-only"
+	// 2. Disabled model checks
+	if !r.cfg.Local.Enabled && r.cfg.Cloud.Enabled {
+		return StrategyCloudOnly, "configuration: local model is disabled"
+	}
+	if r.cfg.Local.Enabled && !r.cfg.Cloud.Enabled {
+		return StrategyLocalOnly, "configuration: cloud model is disabled"
+	}
+	if !r.cfg.Local.Enabled && !r.cfg.Cloud.Enabled {
+		if r.cfg.AutoRoute {
+			return StrategyAuto, "configuration: automatic routing"
+		}
+		return StrategyLocalOnly, "configuration: local default"
 	}
 
-	// 3. Static Heuristic: Multimodal image attachments require cloud vision models
+	// 3. Multimodal image attachments require cloud vision models
 	if len(req.Images) > 0 {
 		return StrategyCloudOnly, "heuristic: multimodal image attachments require cloud vision"
 	}
 
-	// 4. Static Heuristic: Context size exceeding local token ceiling
+	// 4. Context size exceeding local token ceiling
 	estTokens := EstimateTokens(req)
 	if r.cfg.MaxLocalTokens > 0 && estTokens > r.cfg.MaxLocalTokens {
 		return StrategyCloudOnly, fmt.Sprintf("heuristic: context size (%d tokens) exceeds local limit (%d)", estTokens, r.cfg.MaxLocalTokens)
 	}
 
-	// 5. Default based on configured strategy
-	switch Strategy(strings.ToLower(r.cfg.Strategy)) {
-	case StrategyCloudFirst:
-		return StrategyCloudFirst, "strategy: cloud-first with local fallback"
-	case StrategyLocalFirst:
-		return StrategyLocalFirst, "strategy: local-first with cloud fallback"
-	default:
-		return StrategyAuto, "strategy: automatic intelligent routing"
-	}
+	// 5. Default auto-routing (both enabled or auto_route: true)
+	return StrategyAuto, "strategy: automatic intelligent routing"
 }
 
 // EscalateToCloudSignal is the control tag output by the local SLM when a task exceeds local capacity.
@@ -104,9 +96,16 @@ func (r *Router) Generate(ctx context.Context, req engine.Request) (*engine.Resp
 	switch strategy {
 	case StrategyLocalOnly:
 		if r.local == nil {
+			if r.cloud != nil {
+				return r.cloud.Generate(ctx, req)
+			}
 			return nil, errors.New("router: local engine is not available")
 		}
-		return r.local.Generate(ctx, req)
+		resp, err := r.local.Generate(ctx, req)
+		if err != nil && r.cloud != nil {
+			return r.cloud.Generate(ctx, req)
+		}
+		return resp, err
 
 	case StrategyCloudOnly:
 		if r.cloud == nil {
@@ -114,37 +113,22 @@ func (r *Router) Generate(ctx context.Context, req engine.Request) (*engine.Resp
 		}
 		return r.cloud.Generate(ctx, req)
 
-	case StrategyCloudFirst:
-		if r.cloud != nil {
-			resp, err := r.cloud.Generate(ctx, req)
-			if err == nil {
-				return resp, nil
-			}
-			if !r.cfg.EscalateOnError || r.local == nil {
-				return nil, err
-			}
-		}
-		if r.local == nil {
-			return nil, errors.New("router: fallback local engine is not available")
-		}
-		return r.local.Generate(ctx, req)
-
-	case StrategyAuto, StrategyLocalFirst:
+	case StrategyAuto:
 		fallthrough
 	default:
 		if r.local != nil {
 			resp, err := r.local.Generate(ctx, req)
 			if err == nil {
 				// If local model actively signals that task exceeds local capacity, delegate to cloud
-				if strings.HasPrefix(strings.TrimSpace(resp.Text), EscalateToCloudSignal) && r.cloud != nil && r.cfg.EscalateOnError {
+				if strings.HasPrefix(strings.TrimSpace(resp.Text), EscalateToCloudSignal) && r.cloud != nil {
 					return r.cloud.Generate(ctx, req)
 				}
 				return resp, nil
 			}
-			if !r.cfg.EscalateOnError || r.cloud == nil {
+			if r.cloud == nil {
 				return nil, err
 			}
-			// Attempt cloud fallback
+			// Attempt cloud fallback on error
 			cloudResp, cloudErr := r.cloud.Generate(ctx, req)
 			if cloudErr == nil {
 				return cloudResp, nil
@@ -165,9 +149,19 @@ func (r *Router) GenerateStream(ctx context.Context, req engine.Request) (<-chan
 	switch strategy {
 	case StrategyLocalOnly:
 		if r.local == nil {
+			if r.cloud != nil {
+				return r.cloud.GenerateStream(ctx, req)
+			}
 			return nil, errors.New("router: local engine is not available")
 		}
-		return r.local.GenerateStream(ctx, req)
+		stream, err := r.local.GenerateStream(ctx, req)
+		if err != nil && r.cloud != nil {
+			return r.cloud.GenerateStream(ctx, req)
+		}
+		if err != nil {
+			return nil, err
+		}
+		return r.forwardWithEscalation(ctx, stream, r.cloud, req)
 
 	case StrategyCloudOnly:
 		if r.cloud == nil {
@@ -175,22 +169,7 @@ func (r *Router) GenerateStream(ctx context.Context, req engine.Request) (<-chan
 		}
 		return r.cloud.GenerateStream(ctx, req)
 
-	case StrategyCloudFirst:
-		if r.cloud != nil {
-			stream, err := r.cloud.GenerateStream(ctx, req)
-			if err == nil {
-				return r.forwardWithEscalation(ctx, stream, r.local, req)
-			}
-			if !r.cfg.EscalateOnError || r.local == nil {
-				return nil, err
-			}
-		}
-		if r.local == nil {
-			return nil, errors.New("router: fallback local engine is not available")
-		}
-		return r.local.GenerateStream(ctx, req)
-
-	case StrategyAuto, StrategyLocalFirst:
+	case StrategyAuto:
 		fallthrough
 	default:
 		if r.local != nil {
@@ -198,7 +177,7 @@ func (r *Router) GenerateStream(ctx context.Context, req engine.Request) (<-chan
 			if err == nil {
 				return r.forwardWithEscalation(ctx, stream, r.cloud, req)
 			}
-			if !r.cfg.EscalateOnError || r.cloud == nil {
+			if r.cloud == nil {
 				return nil, err
 			}
 			cloudStream, cloudErr := r.cloud.GenerateStream(ctx, req)
@@ -228,7 +207,7 @@ func (r *Router) forwardWithEscalation(ctx context.Context, primary <-chan engin
 		for chunk := range primary {
 			if chunk.Error != nil {
 				// Immediate failure on stream: if fallback available, escalate
-				if r.cfg.EscalateOnError && fallback != nil && accumulated.Len() == 0 {
+				if fallback != nil && accumulated.Len() == 0 {
 					fbStream, err := fallback.GenerateStream(ctx, req)
 					if err == nil {
 						for fbChunk := range fbStream {
@@ -248,7 +227,7 @@ func (r *Router) forwardWithEscalation(ctx context.Context, primary <-chan engin
 				trimmed := strings.TrimSpace(accumulated.String())
 				if strings.HasPrefix(trimmed, EscalateToCloudSignal) {
 					// Active signal detected: discard local buffer and escalate to cloud
-					if r.cfg.EscalateOnError && fallback != nil {
+					if fallback != nil {
 						fbStream, err := fallback.GenerateStream(ctx, req)
 						if err == nil {
 							for fbChunk := range fbStream {

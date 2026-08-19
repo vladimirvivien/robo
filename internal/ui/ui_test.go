@@ -100,3 +100,42 @@ func TestSpinner(t *testing.T) {
 	// Calling stop twice should be safe
 	sp.Stop()
 }
+
+func TestProgressBar(t *testing.T) {
+	pb := ui.NewProgressBar("Downloading model")
+	pb.Update(500, 1000, 50.0)
+	pb.Finish("Downloaded model")
+	// Second finish call should be safe
+	pb.Finish("")
+}
+
+func TestFormatBytes(t *testing.T) {
+	tests := []struct {
+		bytes    int64
+		expected string
+	}{
+		{0, "0 B"},
+		{500, "500 B"},
+		{1024, "1.00 KB"},
+		{1024 * 1024, "1.00 MB"},
+		{2580000000, "2.40 GB"},
+	}
+
+	for _, tc := range tests {
+		got := ui.FormatBytes(tc.bytes)
+		if !strings.Contains(got, strings.Split(tc.expected, " ")[1]) {
+			t.Errorf("FormatBytes(%d) = %q, expected unit %q", tc.bytes, got, tc.expected)
+		}
+	}
+}
+
+func TestCleanResponseText(t *testing.T) {
+	raw := "[ESCALATE_TO_CLOUD]\n\nI cannot architect a full system.\n```powershell\nGet-Date\n```"
+	cleaned := ui.CleanResponseText(raw)
+	if strings.Contains(cleaned, "[ESCALATE_TO_CLOUD]") {
+		t.Errorf("CleanResponseText failed to strip signal: %s", cleaned)
+	}
+	if !strings.Contains(cleaned, "I cannot architect a full system.") {
+		t.Errorf("CleanResponseText corrupted text: %s", cleaned)
+	}
+}
