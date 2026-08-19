@@ -116,4 +116,3 @@ func TestVersionCmd_OutputFlag(t *testing.T) {
 		t.Errorf("expected Commit 'fedcba9', got '%s'", parsed.Commit)
 	}
 }
-
