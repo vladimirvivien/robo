@@ -91,7 +91,19 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	}
 
-	// 3. Validate inference environment setup
+	// 3. Start visual spinner immediately upon one-shot prompt receipt
+	isInteractive := ui.IsStdoutTerminal() && flagOutput == "markdown"
+	var sp *ui.Spinner
+	if isInteractive {
+		sp = ui.StartSpinner("Working...")
+	}
+	defer func() {
+		if sp != nil {
+			sp.Stop()
+		}
+	}()
+
+	// 4. Validate inference environment setup
 	forceBackend := ""
 	if flagLocal {
 		forceBackend = "local-only"
@@ -99,6 +111,9 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		forceBackend = "cloud-only"
 	}
 	if err := engine.ValidateInferenceSetup(cfg, forceBackend); err != nil {
+		if sp != nil {
+			sp.Stop()
+		}
 		if ui.IsStdoutTerminal() {
 			fmt.Fprintln(os.Stderr, ui.ErrorCard(err.Error()))
 		} else {
@@ -107,7 +122,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// 4. Assemble ambient shell context
+	// 5. Assemble ambient shell context (pure in-memory / local files)
 	var systemPrompt strings.Builder
 	systemPrompt.WriteString(config.DefaultRoboSystemPrompt)
 	systemPrompt.WriteString("\n\n")
@@ -134,7 +149,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 4. Construct engines
+	// 6. Construct engines
 	inProcEngine := local.New(cfg.Local)
 	localClient := daemon.NewClient(*cfg, daemon.WithInProcEngine(inProcEngine))
 	cloudEngine := cloud.New(cfg.Cloud)
@@ -142,7 +157,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	r := router.NewRouter(localClient, cloudEngine, cfg.Routing)
 	defer func() { _ = r.Close() }()
 
-	// 5. Build request
+	// 7. Build request
 	req := engine.Request{
 		Prompt:       prompt,
 		SystemPrompt: systemPrompt.String(),
@@ -161,14 +176,14 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		req.ForceBackend = "cloud-only"
 	}
 
-	// 6. Execute generation
-	isInteractive := ui.IsStdoutTerminal() && flagOutput == "markdown"
+	// 8. Execute generation
 	var fullText strings.Builder
 
-	sp := ui.StartSpinner("Working...")
 	stream, err := r.GenerateStream(ctx, req)
 	if err != nil {
-		sp.Stop()
+		if sp != nil {
+			sp.Stop()
+		}
 		if isInteractive {
 			fmt.Fprintln(os.Stderr, ui.ErrorCard(err.Error()))
 		} else {

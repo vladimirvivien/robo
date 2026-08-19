@@ -46,10 +46,17 @@ func StartSpinner(message string) *Spinner {
 
 func (s *Spinner) run() {
 	defer close(s.doneCh)
+
+	// Render initial frame immediately so there is zero delay before the user sees visual feedback
+	s.mu.Lock()
+	initialMsg := s.message
+	s.mu.Unlock()
+	_, _ = fmt.Fprintf(s.out, "\r%s %s", styleSpinner.Render(spinnerFrames[0]), styleSpinnerText.Render(initialMsg))
+
 	ticker := time.NewTicker(80 * time.Millisecond)
 	defer ticker.Stop()
 
-	frameIdx := 0
+	frameIdx := 1
 	for {
 		select {
 		case <-s.stopCh:

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -65,11 +66,14 @@ func runDaemonStart(cmd *cobra.Command, args []string) error {
 	}
 
 	if !flagForeground {
-		// Launch detached background process
+		// Launch detached background process with visual feedback
 		executable, err := os.Executable()
 		if err != nil {
 			return fmt.Errorf("get executable: %w", err)
 		}
+
+		sp := ui.StartSpinner("Starting background robod daemon...")
+		defer sp.Stop()
 
 		subCmd := exec.Command(executable, "daemon", "start", "--foreground")
 		if cfgFile != "" {
@@ -80,7 +84,35 @@ func runDaemonStart(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("spawn background robod: %w", err)
 		}
 
-		fmt.Printf("Started background robod daemon (PID: %d)\n", subCmd.Process.Pid)
+		// Wait for daemon to become ready
+		client := &http.Client{Timeout: 300 * time.Millisecond}
+		healthURL := fmt.Sprintf("%s/health", strings.TrimRight(cfg.Robod.URL, "/"))
+		if healthURL == "" {
+			healthURL = "http://127.0.0.1:8765/health"
+		}
+
+		deadline := time.Now().Add(5 * time.Second)
+		ready := false
+		for time.Now().Before(deadline) {
+			resp, err := client.Get(healthURL)
+			if err == nil && resp.StatusCode == http.StatusOK {
+				_ = resp.Body.Close()
+				ready = true
+				break
+			}
+			if resp != nil {
+				_ = resp.Body.Close()
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+
+		sp.Stop()
+
+		if ready {
+			fmt.Printf("robod daemon is running at %s (PID: %d)\n", cfg.Robod.URL, subCmd.Process.Pid)
+		} else {
+			fmt.Printf("Started background robod daemon (PID: %d) - initializing...\n", subCmd.Process.Pid)
+		}
 		return nil
 	}
 
