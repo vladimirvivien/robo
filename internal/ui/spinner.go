@@ -12,8 +12,8 @@ import (
 
 var (
 	spinnerFrames    = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-	styleSpinner     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#00F0FF"))
-	styleSpinnerText = lipgloss.NewStyle().Foreground(lipgloss.Color("#94A3B8"))
+	styleSpinner     = lipgloss.NewStyle().Bold(true).Foreground(colorCharple)
+	styleSpinnerText = lipgloss.NewStyle().Foreground(colorSmoke)
 )
 
 // Spinner represents an interactive terminal busy indicator.

@@ -79,6 +79,7 @@ func runDaemonStart(cmd *cobra.Command, args []string) error {
 		if cfgFile != "" {
 			subCmd.Args = append(subCmd.Args, "--config", cfgFile)
 		}
+		daemon.DetachCmd(subCmd)
 
 		if err := subCmd.Start(); err != nil {
 			return fmt.Errorf("spawn background robod: %w", err)

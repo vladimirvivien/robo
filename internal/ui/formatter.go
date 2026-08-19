@@ -37,13 +37,12 @@ func (f *MarkdownFormatter) Format(w io.Writer, data OutputData) error {
 		return err
 	}
 
-	renderWidth := max(f.Width-6, 40)
-
-	badge := HeaderBanner(data.Provider, data.Model, data.Local)
+	cardWidth := CappedWidth(f.Width)
+	renderWidth := max(cardWidth-6, 30)
 
 	if data.Command == "" {
 		rendered, _ := RenderMarkdown(data.Response, renderWidth)
-		card := Card(badge, strings.TrimSpace(rendered), "")
+		card := CardWithWidth("", strings.TrimSpace(rendered), "", cardWidth)
 		_, err := fmt.Fprintln(w, card)
 		return err
 	}
@@ -51,7 +50,7 @@ func (f *MarkdownFormatter) Format(w io.Writer, data OutputData) error {
 	// If command is present, render explanation in card if non-empty
 	if data.Explanation != "" {
 		rendered, _ := RenderMarkdown(data.Explanation, renderWidth)
-		card := Card(badge, strings.TrimSpace(rendered), "")
+		card := CardWithWidth("", strings.TrimSpace(rendered), "", cardWidth)
 		if _, err := fmt.Fprintln(w, card); err != nil {
 			return err
 		}

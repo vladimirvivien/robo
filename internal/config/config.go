@@ -12,20 +12,21 @@ import (
 
 // Default constants for configuration
 const (
-	DefaultConfigDir      = ".config/robo"
-	DefaultConfigFile     = "config.yaml"
-	DefaultLocalModel     = "litert-community/gemma-4-E2B-it"
-	DefaultLocalVersion   = "v0.16.0"
-	DefaultCloudModel     = "googleai/gemini-2.5-flash"
-	DefaultCloudProvider  = "googleai"
-	DefaultLocalBackend   = "gpu"
-	DefaultMaxLocalTokens = 4096
-	DefaultRobodURL       = "http://127.0.0.1:8765"
-	DefaultRobodIdleTTL   = 15 * time.Minute
-	DefaultOutputMode     = "markdown"
-	DefaultSessionMode    = "daily"
-	DefaultShellAlias     = "ai"
-	DefaultCloudAPIKeyEnv = "GEMINI_API_KEY"
+	DefaultConfigDir         = ".config/robo"
+	DefaultConfigFile        = "config.yaml"
+	DefaultLocalModel        = "litert-community/gemma-4-E2B-it"
+	DefaultLocalVersion      = "v0.16.0"
+	DefaultCloudModel        = "googleai/gemini-2.5-flash"
+	DefaultCloudProvider     = "googleai"
+	DefaultLocalBackend      = "gpu"
+	DefaultMaxLocalTokens    = 4096
+	DefaultRobodURL          = "http://127.0.0.1:8765"
+	DefaultRobodIdleTTL      = 15 * time.Minute
+	DefaultOutputMode        = "markdown"
+	DefaultSessionMode       = "daily"
+	DefaultInputPromptPrefix = "🤖 robo>"
+	DefaultShellAlias        = "ai"
+	DefaultCloudAPIKeyEnv    = "GEMINI_API_KEY"
 
 	DefaultRoboSystemPrompt = `You are Robo, an on-device AI assistant agent designed to interact directly with the local operating system.
 
@@ -49,11 +50,9 @@ Guidelines:
 
 // Config represents the complete Robo configuration.
 type Config struct {
-	OutputMode     string      `yaml:"output_mode,omitempty"`
-	DefaultSession string      `yaml:"default_session,omitempty"`
-	LLM            LLMConfig   `yaml:"llm"`
-	Robod          RobodConfig `yaml:"robod"`
-	Shell          ShellConfig `yaml:"shell"`
+	LLM   LLMConfig   `yaml:"llm"`
+	Robod RobodConfig `yaml:"robod"`
+	Shell ShellConfig `yaml:"shell"`
 }
 
 // LLMConfig controls model configuration and routing.
@@ -104,12 +103,15 @@ type CloudConfig struct {
 	APIKeyEnv string `yaml:"api_key_env,omitempty"`
 }
 
-// ShellConfig defines ambient context and execution settings for Bash/Zsh/Fish/PowerShell.
+// ShellConfig defines ambient context, execution, and output settings.
 type ShellConfig struct {
-	CaptureHistory  bool `yaml:"capture_history"`
-	MaxHistoryLines int  `yaml:"max_history_lines,omitempty"`
-	AutoAccept      bool `yaml:"auto_accept"`
-	YoloApproveAll  bool `yaml:"yolo_approve_all"`
+	OutputMode        string `yaml:"output_mode,omitempty"`
+	DefaultSession    string `yaml:"default_session,omitempty"`
+	InputPromptPrefix string `yaml:"input_prompt_prefix,omitempty"`
+	CaptureHistory    bool   `yaml:"capture_history"`
+	MaxHistoryLines   int    `yaml:"max_history_lines,omitempty"`
+	AutoAccept        bool   `yaml:"auto_accept"`
+	YoloApproveAll    bool   `yaml:"yolo_approve_all"`
 }
 
 // NewDefaultConfig returns a Config struct initialized with standard defaults.
@@ -118,8 +120,6 @@ func NewDefaultConfig() *Config {
 	configDir := filepath.Join(home, ".config", "robo")
 
 	return &Config{
-		OutputMode:     DefaultOutputMode,
-		DefaultSession: DefaultSessionMode,
 		LLM: LLMConfig{
 			AutoRoute:      true,
 			MaxLocalTokens: DefaultMaxLocalTokens,
@@ -146,8 +146,11 @@ func NewDefaultConfig() *Config {
 			IdleTTL:   DefaultRobodIdleTTL,
 		},
 		Shell: ShellConfig{
-			CaptureHistory:  true,
-			MaxHistoryLines: 5,
+			OutputMode:        DefaultOutputMode,
+			DefaultSession:    DefaultSessionMode,
+			InputPromptPrefix: DefaultInputPromptPrefix,
+			CaptureHistory:    true,
+			MaxHistoryLines:   5,
 		},
 	}
 }
@@ -285,6 +288,15 @@ func (c *Config) applyEnvOverrides() {
 	if env := os.Getenv("ROBO_ROBOD_TLS_INSECURE"); env == "1" || strings.ToLower(env) == "true" {
 		ensureTLS()
 		c.Robod.TLS.InsecureSkipVerify = true
+	}
+	if env := os.Getenv("ROBO_OUTPUT_MODE"); env != "" {
+		c.Shell.OutputMode = env
+	}
+	if env := os.Getenv("ROBO_DEFAULT_SESSION"); env != "" {
+		c.Shell.DefaultSession = env
+	}
+	if env := os.Getenv("ROBO_INPUT_PROMPT_PREFIX"); env != "" {
+		c.Shell.InputPromptPrefix = env
 	}
 	if env := os.Getenv("ROBO_AUTO_ACCEPT"); env == "1" || strings.ToLower(env) == "true" {
 		c.Shell.AutoAccept = true

@@ -8,69 +8,71 @@ import (
 )
 
 var (
-	// Modern Vibrant Palette
-	colorCyan        = lipgloss.Color("#00F0FF")
-	colorSky         = lipgloss.Color("#38BDF8")
-	colorMagenta     = lipgloss.Color("#F43F5E")
-	colorPurple      = lipgloss.Color("#A855F7")
-	colorLocalGreen  = lipgloss.Color("#10B981")
-	colorCloudBlue   = lipgloss.Color("#2563EB")
-	colorWarningGold = lipgloss.Color("#F59E0B")
-	colorErrorRed    = lipgloss.Color("#EF4444")
-	colorTextMuted   = lipgloss.Color("#94A3B8")
-	colorDarkBg      = lipgloss.Color("#0F172A")
+	// Charmtone Pantera Palette (Charm-Crush aesthetic)
+	colorCharple  = lipgloss.Color("#7D56F4") // Signature Charm Purple (Primary brand, borders)
+	colorDolly    = lipgloss.Color("#E865AE") // Charm Magenta / Pink (Secondary, prompt arrow)
+	colorJulep    = lipgloss.Color("#00D787") // Vibrant Mint Green (Local SLM, success badges)
+	colorMalibu   = lipgloss.Color("#5299E0") // Sky Azure Blue (Cloud LLM, info badges)
+	colorMustard  = lipgloss.Color("#FFB300") // Warm Gold (Warnings, attention)
+	colorSriracha = lipgloss.Color("#E83B46") // Bright Error Red
+	colorSalt     = lipgloss.Color("#FAFAFA") // Pure Crisp White
+	colorSash     = lipgloss.Color("#EDEDED") // Bright Text
+	colorSmoke    = lipgloss.Color("#A3A3A3") // Medium Muted Text
+	colorIron     = lipgloss.Color("#3D3D3D") // Border / Gutter Gray
+	colorBBQ      = lipgloss.Color("#1F1F1F") // Code Block Dark Background
+	colorPepper   = lipgloss.Color("#171717") // Deep Background
 
 	// Badge Styles
 	styleLocalBadge = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Background(colorLocalGreen).
+			Foreground(colorSalt).
+			Background(colorJulep).
 			Padding(0, 1)
 
 	styleCloudBadge = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Background(colorCloudBlue).
+			Foreground(colorSalt).
+			Background(colorCharple).
 			Padding(0, 1)
 
 	styleWarningBadge = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("#000000")).
-				Background(colorWarningGold).
+				Foreground(colorPepper).
+				Background(colorMustard).
 				Padding(0, 1)
 
 	styleSuccessBadge = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(lipgloss.Color("#FFFFFF")).
-				Background(colorLocalGreen).
+				Foreground(colorSalt).
+				Background(colorJulep).
 				Padding(0, 1)
 
 	styleErrorBadge = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Background(colorErrorRed).
+			Foreground(colorSalt).
+			Background(colorSriracha).
 			Padding(0, 1)
 
 	// Card Styles
 	styleCard = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorCyan).
+			BorderForeground(colorCharple).
 			Padding(0, 1).
 			MarginTop(0).
 			MarginBottom(1)
 
 	styleTitle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(colorSky)
+			Foreground(colorCharple)
 
 	styleCommand = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(colorCyan).
-			Background(colorDarkBg).
+			Foreground(colorSash).
+			Background(colorBBQ).
 			Padding(0, 1)
 
 	styleMuted = lipgloss.NewStyle().
-			Foreground(colorTextMuted)
+			Foreground(colorSmoke)
 )
 
 // BadgeLocal renders a styled badge for on-device local engine executions.
@@ -104,8 +106,19 @@ func BadgeError(text string) string {
 	return styleErrorBadge.Render(text)
 }
 
-// Card wraps content in a styled rounded border box.
+// Card wraps content in a styled rounded border box with automatic width bounding.
 func Card(title, content, footer string) string {
+	return CardWithWidth(title, content, footer, CappedWidth(0))
+}
+
+// CardWithWidth wraps content in a styled rounded border box with a specified width constraint.
+func CardWithWidth(title, content, footer string, width int) string {
+	if width <= 0 {
+		width = CappedWidth(0)
+	}
+
+	contentWidth := max(width-4, 30)
+
 	var sb strings.Builder
 	if title != "" {
 		if strings.Contains(title, "\x1b[") {
@@ -120,7 +133,9 @@ func Card(title, content, footer string) string {
 		sb.WriteString("\n\n")
 		sb.WriteString(styleMuted.Render(footer))
 	}
-	return styleCard.Render(sb.String())
+
+	cardStyle := styleCard.Width(contentWidth)
+	return cardStyle.Render(sb.String())
 }
 
 // CleanResponseText strips internal routing signals (such as [ESCALATE_TO_CLOUD]) and cleans whitespace.
@@ -131,21 +146,35 @@ func CleanResponseText(text string) string {
 
 // CommandCard formats a proposed shell command with review framing.
 func CommandCard(title, command string) string {
+	return CommandCardWithWidth(title, command, CappedWidth(0))
+}
+
+// CommandCardWithWidth formats a proposed shell command with review framing and explicit width bounding.
+func CommandCardWithWidth(title, command string, width int) string {
+	if width <= 0 {
+		width = CappedWidth(0)
+	}
+	contentWidth := max(width-4, 30)
+
 	var sb strings.Builder
 	if title == "" {
 		title = "Proposed Shell Command"
 	}
-	sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(colorPurple).Render(title))
+	sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(colorDolly).Render(title))
 	sb.WriteString("\n\n  ")
 	sb.WriteString(styleCommand.Render(command))
-	return styleCard.Render(sb.String())
+
+	cardStyle := styleCard.Width(contentWidth)
+	return cardStyle.Render(sb.String())
 }
 
 // PromptIndicator renders the stylized interactive REPL prompt string.
-func PromptIndicator(sessionName string) string {
-	bracketStyle := lipgloss.NewStyle().Bold(true).Foreground(colorSky)
-	arrowStyle := lipgloss.NewStyle().Bold(true).Foreground(colorMagenta)
-	return fmt.Sprintf("%s %s ", bracketStyle.Render("["+sessionName+"]"), arrowStyle.Render("❯"))
+func PromptIndicator(prefix string) string {
+	if strings.TrimSpace(prefix) == "" {
+		prefix = "🤖 robo>"
+	}
+	prefixStyle := lipgloss.NewStyle().Bold(true).Foreground(colorCharple)
+	return fmt.Sprintf("%s ", prefixStyle.Render(strings.TrimSpace(prefix)))
 }
 
 // HeaderBanner formats the engine execution provenance header.

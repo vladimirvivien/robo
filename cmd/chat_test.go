@@ -27,4 +27,9 @@ func TestChatCmd_Flags(t *testing.T) {
 	if flagSession.Shorthand != "s" {
 		t.Errorf("expected shorthand 's', got %q", flagSession.Shorthand)
 	}
+
+	flagLocal := cmd.ChatCmd.Flag("local-only")
+	if flagLocal == nil {
+		t.Fatalf("expected --local-only flag on ChatCmd")
+	}
 }

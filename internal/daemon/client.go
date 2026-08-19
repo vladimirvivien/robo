@@ -174,13 +174,13 @@ func (c *Client) resolveEndpoint(ctx context.Context) (*endpointTarget, error) {
 		return nil, fmt.Errorf("robod: auto-spawn failed: %w", err)
 	}
 
-	// Poll for readiness up to 1 second
-	deadline := time.Now().Add(1 * time.Second)
+	// Poll for readiness up to 10 seconds (gives model weights and GPU time to initialize)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(50 * time.Millisecond):
+		case <-time.After(100 * time.Millisecond):
 		}
 
 		if c.pingURL(ctx, baseURL) == nil {
@@ -403,6 +403,7 @@ func (c *Client) defaultLauncher() error {
 		exe = "robo"
 	}
 
-	cmd := exec.Command(exe, "daemon", "start")
+	cmd := exec.Command(exe, "daemon", "start", "--foreground")
+	DetachCmd(cmd)
 	return cmd.Start()
 }

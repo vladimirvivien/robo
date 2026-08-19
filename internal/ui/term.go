@@ -3,6 +3,7 @@ package ui
 import (
 	"os"
 
+	"github.com/charmbracelet/x/term"
 	"github.com/mattn/go-isatty"
 )
 
@@ -24,7 +25,28 @@ func IsStdinTerminal() bool {
 	return IsTerminal(os.Stdin)
 }
 
-// TerminalWidth returns the detected terminal width, defaulting to 80 columns.
+// TerminalWidth returns the detected terminal window width, falling back to 80 columns.
 func TerminalWidth() int {
-	return 80
+	w, _, err := term.GetSize(os.Stdout.Fd())
+	if err != nil || w <= 0 {
+		w, _, err = term.GetSize(os.Stdin.Fd())
+		if err != nil || w <= 0 {
+			return 80
+		}
+	}
+	return w
+}
+
+// CappedWidth returns the optimal responsive width for UI cards (between 40 and 100 columns).
+func CappedWidth(termWidth int) int {
+	if termWidth <= 0 {
+		termWidth = TerminalWidth()
+	}
+	if termWidth < 40 {
+		return 40
+	}
+	if termWidth > 100 {
+		return 100
+	}
+	return termWidth
 }

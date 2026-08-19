@@ -12,11 +12,11 @@ import (
 )
 
 var (
-	styleProgressFilled = lipgloss.NewStyle().Foreground(lipgloss.Color("#00F0FF"))
-	styleProgressEmpty  = lipgloss.NewStyle().Foreground(lipgloss.Color("#334155"))
-	styleProgressPct    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F1F5F9"))
-	styleProgressBytes  = lipgloss.NewStyle().Foreground(lipgloss.Color("#94A3B8"))
-	styleProgressTitle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#38BDF8"))
+	styleProgressFilled = lipgloss.NewStyle().Foreground(colorCharple)
+	styleProgressEmpty  = lipgloss.NewStyle().Foreground(colorIron)
+	styleProgressPct    = lipgloss.NewStyle().Bold(true).Foreground(colorSalt)
+	styleProgressBytes  = lipgloss.NewStyle().Foreground(colorSmoke)
+	styleProgressTitle  = lipgloss.NewStyle().Bold(true).Foreground(colorDolly)
 )
 
 // ProgressBar manages an interactive, real-time terminal download progress bar.

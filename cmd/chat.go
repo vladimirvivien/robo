@@ -74,10 +74,15 @@ func runChat(cmd *cobra.Command, args []string) error {
 
 	// 3. Resolve active session
 	var currentSession *history.Session
-	if flagChatSession != "" {
-		currentSession, err = store.GetSessionByName(ctx, flagChatSession)
+	sessionName := flagChatSession
+	if sessionName == "" && cfg.Shell.DefaultSession != "" && cfg.Shell.DefaultSession != "daily" {
+		sessionName = cfg.Shell.DefaultSession
+	}
+
+	if sessionName != "" {
+		currentSession, err = store.GetSessionByName(ctx, sessionName)
 		if err != nil {
-			currentSession, err = store.CreateSession(ctx, flagChatSession, "thread")
+			currentSession, err = store.CreateSession(ctx, sessionName, "thread")
 			if err != nil {
 				return fmt.Errorf("create session: %w", err)
 			}
@@ -118,19 +123,28 @@ func runChat(cmd *cobra.Command, args []string) error {
 	)
 	fmt.Println(ui.Card("robo chat v0.1.0", welcomeText, "Multi-turn history backed by SQLite"))
 
-	scanner := bufio.NewScanner(os.Stdin)
+	reader := bufio.NewReader(os.Stdin)
 
 	// 6. Interactive REPL Loop
 	for {
-		fmt.Print(ui.PromptIndicator(currentSession.Name))
+		ui.RestoreCookedMode()
+		fmt.Print(ui.PromptIndicator(cfg.Shell.InputPromptPrefix))
+		_ = os.Stdout.Sync()
 
-		if !scanner.Scan() {
+		input, err := reader.ReadString('\n')
+		if err != nil {
 			break
 		}
 
-		line := strings.TrimSpace(scanner.Text())
+		line := strings.TrimSpace(input)
 		if line == "" {
 			continue
+		}
+
+		lower := strings.ToLower(line)
+		if lower == "exit" || lower == "quit" || lower == "q" || lower == ":q" {
+			fmt.Println("Goodbye!")
+			return nil
 		}
 
 		// Handle Slash Commands
@@ -194,6 +208,14 @@ func runChat(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(os.Stderr, "history warning: %v\n", err)
 		}
 
+		usedLocal := activeBackend == "local-only" || (activeBackend == "" && cfg.LLM.Local.Enabled)
+		providerName := cfg.LLM.Local.Provider
+		modelName := cfg.LLM.Local.Model
+		if !usedLocal {
+			providerName = cfg.LLM.Cloud.Provider
+			modelName = cfg.LLM.Cloud.Model
+		}
+
 		stream, err := r.GenerateStream(ctx, req)
 		if err != nil {
 			sp.Stop()
@@ -203,40 +225,44 @@ func runChat(cmd *cobra.Command, args []string) error {
 
 		var fullResponse strings.Builder
 		tokensUsed := 0
-		firstChunk := true
 
 		for chunk := range stream {
-			if firstChunk {
-				sp.Stop()
-				firstChunk = false
-			}
 			if chunk.Error != nil {
+				sp.Stop()
 				fmt.Fprintf(os.Stderr, "\n[stream error]: %v\n", chunk.Error)
 				break
 			}
-			fmt.Print(chunk.Text)
 			fullResponse.WriteString(chunk.Text)
 			if chunk.TokensUsed > 0 {
 				tokensUsed = chunk.TokensUsed
 			}
 		}
 		sp.Stop()
-		if !strings.HasSuffix(fullResponse.String(), "\n") {
-			fmt.Println()
+
+		cleaned := ui.CleanResponseText(fullResponse.String())
+		cmdStr := shell.ExtractProposedCommand(cleaned)
+		explanation := strings.TrimSpace(shell.StripCodeBlock(cleaned))
+
+		// Render the response using Formatter (styled Lipgloss card with Glamour markdown)
+		formatter, err := ui.NewFormatter(cfg.Shell.OutputMode, true, ui.TerminalWidth())
+		if err == nil {
+			outputData := ui.OutputData{
+				Response:    cleaned,
+				Explanation: explanation,
+				Command:     cmdStr,
+				Provider:    providerName,
+				Model:       modelName,
+				Local:       usedLocal,
+			}
+			if err := formatter.Format(os.Stdout, outputData); err != nil {
+				fmt.Fprintf(os.Stderr, "format error: %v\n", err)
+			}
 		}
 
 		// Save assistant turn in SQLite
-		usedLocal := activeBackend == "local-only" || (activeBackend == "" && cfg.LLM.Local.Enabled)
-		providerName := cfg.LLM.Local.Provider
-		modelName := cfg.LLM.Local.Model
-		if !usedLocal {
-			providerName = cfg.LLM.Cloud.Provider
-			modelName = cfg.LLM.Cloud.Model
-		}
-
 		if _, err := store.AppendMessage(ctx, currentSession.ID, history.Message{
 			Role:       "assistant",
-			Content:    fullResponse.String(),
+			Content:    cleaned,
 			Provider:   providerName,
 			Model:      modelName,
 			TokensUsed: tokensUsed,
@@ -245,13 +271,15 @@ func runChat(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(os.Stderr, "history warning: %v\n", err)
 		}
 
-		// Check and handle proposed actions / commands
-		if err := handleProposedAction(ctx, cfg, fullResponse.String(), true); err != nil {
-			fmt.Fprintf(os.Stderr, "action error: %v\n", err)
+		// If a command was proposed, prompt execution review
+		if cmdStr != "" {
+			if err := handleProposedAction(ctx, cfg, cleaned, true); err != nil {
+				fmt.Fprintf(os.Stderr, "action error: %v\n", err)
+			}
 		}
 	}
 
-	return scanner.Err()
+	return nil
 }
 
 func handleSlashCommand(
@@ -266,7 +294,7 @@ func handleSlashCommand(
 	cmd := strings.ToLower(parts[0])
 
 	switch cmd {
-	case "/exit", "/quit", "/q":
+	case "/exit", "/quit", "/q", ":q":
 		return true, true
 
 	case "/help", "/h", "/?":

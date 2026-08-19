@@ -98,13 +98,18 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	}
 
-	// 3. Validate output format early
-	if _, err := ui.NewFormatter(flagOutput, false, 80); err != nil {
+	// 3. Resolve effective output format
+	outputFormat := flagOutput
+	if !cmd.Flags().Changed("output") && cfg.Shell.OutputMode != "" {
+		outputFormat = cfg.Shell.OutputMode
+	}
+
+	if _, err := ui.NewFormatter(outputFormat, false, 80); err != nil {
 		return err
 	}
 
 	// 4. Start visual spinner immediately upon one-shot prompt receipt
-	isInteractive := ui.IsStdoutTerminal() && (flagOutput == "markdown" || flagOutput == "md" || flagOutput == "")
+	isInteractive := ui.IsStdoutTerminal() && (outputFormat == "markdown" || outputFormat == "md" || outputFormat == "")
 	var sp *ui.Spinner
 	if isInteractive {
 		sp = ui.StartSpinner("Working...")
@@ -231,7 +236,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		modelName = cfg.LLM.Cloud.Model
 	}
 
-	formatter, err := ui.NewFormatter(flagOutput, isInteractive, ui.TerminalWidth())
+	formatter, err := ui.NewFormatter(outputFormat, isInteractive, ui.TerminalWidth())
 	if err != nil {
 		return err
 	}

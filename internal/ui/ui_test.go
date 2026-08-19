@@ -87,9 +87,14 @@ func TestTerminalDetection(t *testing.T) {
 }
 
 func TestPromptIndicator(t *testing.T) {
-	indicator := ui.PromptIndicator("daily-2026-08-18")
-	if !strings.Contains(indicator, "daily-2026-08-18") || !strings.Contains(indicator, "❯") {
-		t.Errorf("unexpected prompt indicator: %s", indicator)
+	defaultInd := ui.PromptIndicator("")
+	if !strings.Contains(defaultInd, "🤖") || !strings.Contains(defaultInd, "robo>") {
+		t.Errorf("unexpected default prompt indicator: %s", defaultInd)
+	}
+
+	customInd := ui.PromptIndicator("my-robo>")
+	if !strings.Contains(customInd, "my-robo>") {
+		t.Errorf("unexpected custom prompt indicator: %s", customInd)
 	}
 }
 
@@ -137,5 +142,23 @@ func TestCleanResponseText(t *testing.T) {
 	}
 	if !strings.Contains(cleaned, "I cannot architect a full system.") {
 		t.Errorf("CleanResponseText corrupted text: %s", cleaned)
+	}
+}
+
+func TestCard_WidthBounding(t *testing.T) {
+	longText := strings.Repeat("This is a very long sentence designed to test card wrapping across lines. ", 5)
+	card := ui.CardWithWidth("Test Title", longText, "Footer", 60)
+	if !strings.Contains(card, "Test Title") {
+		t.Error("expected card to contain title")
+	}
+
+	capped := ui.CappedWidth(200)
+	if capped > 100 {
+		t.Errorf("expected CappedWidth(200) <= 100, got %d", capped)
+	}
+
+	cappedMin := ui.CappedWidth(20)
+	if cappedMin < 40 {
+		t.Errorf("expected CappedWidth(20) >= 40, got %d", cappedMin)
 	}
 }
