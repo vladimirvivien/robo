@@ -55,9 +55,9 @@ func init() {
 	log.SetOutput(io.Discard)
 
 	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ~/.config/robo/config.yaml)")
+	RootCmd.PersistentFlags().StringVarP(&flagOutput, "output", "o", "markdown", "output format (markdown, plain, json, code)")
 	RootCmd.Flags().BoolVarP(&flagLocal, "local-only", "l", false, "force execution on local on-device SLM")
 	RootCmd.Flags().BoolVarP(&flagCloud, "cloud-only", "c", false, "force execution on cloud frontier model")
-	RootCmd.Flags().StringVarP(&flagOutput, "output", "o", "markdown", "output format (markdown, plain, json, code)")
 	RootCmd.Flags().StringVar(&flagSystem, "system", "", "custom system prompt override")
 	RootCmd.Flags().BoolVar(&flagNoStream, "no-stream", false, "disable streaming output")
 	RootCmd.Flags().BoolVarP(&flagAutoAccept, "auto-accept", "y", false, "auto-accept all non-destructive actions without prompt")
