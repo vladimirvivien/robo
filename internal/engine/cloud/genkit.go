@@ -3,29 +3,50 @@ package cloud
 import (
 	"context"
 	"fmt"
+	"io"
+	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
 
 	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core/api"
+	"github.com/firebase/genkit/go/core/logger"
 	"github.com/firebase/genkit/go/genkit"
 	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/vladimirvivien/robo/internal/config"
 	"github.com/vladimirvivien/robo/internal/engine"
+	"github.com/vladimirvivien/robo/internal/shell"
 )
+
+func init() {
+	// Silence third-party SDK loggers (Genkit, Google GenAI SDK) from polluting the terminal REPL
+	_ = os.Setenv("GENKIT_LOG_LEVEL", "warn")
+	logger.SetDefaultHandler(slog.NewTextHandler(io.Discard, nil))
+	logger.SetLevel(slog.LevelWarn)
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	log.SetOutput(io.Discard)
+}
 
 // Engine implements engine.Engine using the Genkit Go SDK.
 type Engine struct {
-	cfg config.CloudConfig
-	g   *genkit.Genkit
-	mu  sync.Mutex
+	cfg       config.CloudConfig
+	fullCfg   *config.Config
+	g         *genkit.Genkit
+	shellTool ai.Tool
+	mu        sync.Mutex
 }
 
 // New creates a new Genkit cloud engine instance.
-func New(cfg config.CloudConfig) *Engine {
+func New(cfg config.CloudConfig, fullCfg ...*config.Config) *Engine {
+	var fc *config.Config
+	if len(fullCfg) > 0 {
+		fc = fullCfg[0]
+	}
 	return &Engine{
-		cfg: cfg,
+		cfg:     cfg,
+		fullCfg: fc,
 	}
 }
 
@@ -94,12 +115,22 @@ func (e *Engine) Genkit(ctx context.Context) (resG *genkit.Genkit, err error) {
 		modelName = config.DefaultCloudModel
 	}
 
-	g := genkit.Init(ctx,
+	silentCtx := logger.WithContext(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	g := genkit.Init(silentCtx,
 		genkit.WithPlugins(plugins...),
 		genkit.WithDefaultModel(modelName),
 	)
 
+	toolHandler := shell.NewToolHandler(e.fullCfg)
+	shellTool := genkit.DefineTool(g, "execute_shell",
+		"Propose and execute a shell command on the host operating system.",
+		func(ctx *ai.ToolContext, in shell.ShellInput) (shell.ShellOutput, error) {
+			return toolHandler.Handle(ctx, in)
+		},
+	)
+
 	e.g = g
+	e.shellTool = shellTool
 	return g, nil
 }
 
@@ -175,6 +206,7 @@ func (e *Engine) Close() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.g = nil
+	e.shellTool = nil
 	return nil
 }
 
@@ -204,6 +236,10 @@ func (e *Engine) buildGenkitOptions(req engine.Request) []ai.GenerateOption {
 
 	messages = append(messages, ai.NewUserTextMessage(promptText.String()))
 	opts = append(opts, ai.WithMessages(messages...))
+
+	if e.shellTool != nil {
+		opts = append(opts, ai.WithTools(e.shellTool))
+	}
 
 	if req.Temperature > 0 {
 		cfg := map[string]any{

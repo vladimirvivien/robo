@@ -1,0 +1,39 @@
+package shell_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/vladimirvivien/robo/internal/config"
+	"github.com/vladimirvivien/robo/internal/shell"
+)
+
+func TestToolHandler_EmptyCommand(t *testing.T) {
+	cfg := config.NewDefaultConfig()
+	handler := shell.NewToolHandler(cfg)
+
+	out, err := handler.Handle(context.Background(), shell.ShellInput{Command: ""})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.Error != "empty command" {
+		t.Errorf("expected empty command error, got: %s", out.Error)
+	}
+}
+
+func TestToolHandler_YoloApproveAll(t *testing.T) {
+	cfg := config.NewDefaultConfig()
+	cfg.Shell.YoloApproveAll = true
+	handler := shell.NewToolHandler(cfg)
+
+	out, err := handler.Handle(context.Background(), shell.ShellInput{
+		Command:     "echo 'testing tool call'",
+		Description: "Echo test",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.ExitCode != 0 {
+		t.Errorf("expected exit code 0, got %d (error: %s)", out.ExitCode, out.Error)
+	}
+}

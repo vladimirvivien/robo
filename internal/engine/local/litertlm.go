@@ -10,19 +10,27 @@ import (
 	"github.com/vladimirvivien/litertlm-go/pkg/litertlm"
 	"github.com/vladimirvivien/robo/internal/config"
 	"github.com/vladimirvivien/robo/internal/engine"
+	"github.com/vladimirvivien/robo/internal/shell"
 )
 
 // Engine implements engine.Engine using Google LiteRT-LM.
 type Engine struct {
-	cfg    config.LocalConfig
-	client *litertlm.Client
-	mu     sync.Mutex
+	cfg       config.LocalConfig
+	fullCfg   *config.Config
+	client    *litertlm.Client
+	shellTool *litertlm.ManagedTool[shell.ShellInput, shell.ShellOutput]
+	mu        sync.Mutex
 }
 
 // New creates a new LiteRT-LM local engine instance.
-func New(cfg config.LocalConfig) *Engine {
+func New(cfg config.LocalConfig, fullCfg ...*config.Config) *Engine {
+	var fc *config.Config
+	if len(fullCfg) > 0 {
+		fc = fullCfg[0]
+	}
 	return &Engine{
-		cfg: cfg,
+		cfg:     cfg,
+		fullCfg: fc,
 	}
 }
 
@@ -66,7 +74,20 @@ func (e *Engine) Client(ctx context.Context) (*litertlm.Client, error) {
 		return nil, fmt.Errorf("local: initialize litertlm: %w", err)
 	}
 
+	toolHandler := shell.NewToolHandler(e.fullCfg)
+	shellTool, err := litertlm.RegisterTool(client, "execute_shell",
+		"Propose and execute a shell command on the host operating system.",
+		func(ctx context.Context, in shell.ShellInput) (shell.ShellOutput, error) {
+			return toolHandler.Handle(ctx, in)
+		},
+	)
+	if err != nil {
+		_ = client.Close()
+		return nil, fmt.Errorf("local: register shell tool: %w", err)
+	}
+
 	e.client = client
+	e.shellTool = shellTool
 	return client, nil
 }
 
@@ -79,39 +100,32 @@ func (e *Engine) Generate(ctx context.Context, req engine.Request) (*engine.Resp
 
 	fullPrompt := formatPrompt(req)
 
-	// If a system prompt is provided, run through Chat to frame correctly
+	var chatOpts []litertlm.ChatOption
 	if req.SystemPrompt != "" {
-		chat, err := client.NewChat(ctx, litertlm.WithSystemPrompt(req.SystemPrompt))
-		if err != nil {
-			return nil, fmt.Errorf("local: new chat: %w", err)
-		}
-		defer func() { _ = chat.Close() }()
-
-		reply, err := chat.Send(ctx, fullPrompt)
-		if err != nil {
-			return nil, fmt.Errorf("local: chat send: %w", err)
-		}
-
-		return &engine.Response{
-			Text:      reply.Text(),
-			Provider:  "litertlm",
-			Model:     e.cfg.Model,
-			UsedLocal: true,
-		}, nil
+		chatOpts = append(chatOpts, litertlm.WithSystemPrompt(req.SystemPrompt))
 	}
+	if e.shellTool != nil {
+		chatOpts = append(chatOpts, litertlm.WithTool(e.shellTool))
+	}
+
+	chat, err := client.NewChat(ctx, chatOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("local: new chat: %w", err)
+	}
+	defer func() { _ = chat.Close() }()
 
 	var runtimeOpts []litertlm.RuntimeOption
 	if req.MaxTokens > 0 {
 		runtimeOpts = append(runtimeOpts, litertlm.WithMaxOutputTokens(req.MaxTokens))
 	}
 
-	text, err := client.Generate(ctx, fullPrompt, runtimeOpts...)
+	reply, err := chat.Send(ctx, fullPrompt, runtimeOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("local: generate: %w", err)
+		return nil, fmt.Errorf("local: chat send: %w", err)
 	}
 
 	return &engine.Response{
-		Text:      text,
+		Text:      reply.Text(),
 		Provider:  "litertlm",
 		Model:     e.cfg.Model,
 		UsedLocal: true,
@@ -136,28 +150,22 @@ func (e *Engine) GenerateStream(ctx context.Context, req engine.Request) (<-chan
 	go func() {
 		defer close(out)
 
+		var chatOpts []litertlm.ChatOption
 		if req.SystemPrompt != "" {
-			chat, err := client.NewChat(ctx, litertlm.WithSystemPrompt(req.SystemPrompt))
-			if err != nil {
-				out <- engine.StreamChunk{Error: fmt.Errorf("local: new chat: %w", err)}
-				return
-			}
-			defer func() { _ = chat.Close() }()
-
-			for chunk, err := range chat.SendStream(ctx, fullPrompt, runtimeOpts...) {
-				if err != nil {
-					out <- engine.StreamChunk{Error: err}
-					return
-				}
-				out <- engine.StreamChunk{
-					Text:  chunk.Text,
-					Final: chunk.Final,
-				}
-			}
-			return
+			chatOpts = append(chatOpts, litertlm.WithSystemPrompt(req.SystemPrompt))
+		}
+		if e.shellTool != nil {
+			chatOpts = append(chatOpts, litertlm.WithTool(e.shellTool))
 		}
 
-		for chunk, err := range client.GenerateStream(ctx, fullPrompt, runtimeOpts...) {
+		chat, err := client.NewChat(ctx, chatOpts...)
+		if err != nil {
+			out <- engine.StreamChunk{Error: fmt.Errorf("local: new chat: %w", err)}
+			return
+		}
+		defer func() { _ = chat.Close() }()
+
+		for chunk, err := range chat.SendStream(ctx, fullPrompt, runtimeOpts...) {
 			if err != nil {
 				out <- engine.StreamChunk{Error: err}
 				return
@@ -180,6 +188,7 @@ func (e *Engine) Close() error {
 	if e.client != nil {
 		err := e.client.Close()
 		e.client = nil
+		e.shellTool = nil
 		return err
 	}
 	return nil

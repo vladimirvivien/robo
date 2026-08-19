@@ -95,9 +95,9 @@ func runChat(cmd *cobra.Command, args []string) error {
 	}
 
 	// 4. Initialize Engines
-	inProcEngine := local.New(cfg.LLM.Local)
+	inProcEngine := local.New(cfg.LLM.Local, cfg)
 	localClient := daemon.NewClient(*cfg, daemon.WithInProcEngine(inProcEngine))
-	cloudEngine := cloud.New(cfg.LLM.Cloud)
+	cloudEngine := cloud.New(cfg.LLM.Cloud, cfg)
 
 	r := router.NewRouter(localClient, cloudEngine, cfg.LLM)
 	defer func() { _ = r.Close() }()
@@ -269,13 +269,6 @@ func runChat(cmd *cobra.Command, args []string) error {
 			CreatedAt:  time.Now().UTC(),
 		}); err != nil {
 			fmt.Fprintf(os.Stderr, "history warning: %v\n", err)
-		}
-
-		// If a command was proposed, prompt execution review
-		if cmdStr != "" {
-			if err := handleProposedAction(ctx, cfg, cleaned, true); err != nil {
-				fmt.Fprintf(os.Stderr, "action error: %v\n", err)
-			}
 		}
 	}
 

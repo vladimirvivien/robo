@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
+	"log/slog"
 	"os"
 	"runtime"
 	"strings"
@@ -48,6 +50,10 @@ func Execute() error {
 }
 
 func init() {
+	_ = os.Setenv("GENKIT_LOG_LEVEL", "warn")
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	log.SetOutput(io.Discard)
+
 	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ~/.config/robo/config.yaml)")
 	RootCmd.Flags().BoolVarP(&flagLocal, "local-only", "l", false, "force execution on local on-device SLM")
 	RootCmd.Flags().BoolVarP(&flagCloud, "cloud-only", "c", false, "force execution on cloud frontier model")
@@ -167,9 +173,9 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	}
 
 	// 6. Construct engines
-	inProcEngine := local.New(cfg.LLM.Local)
+	inProcEngine := local.New(cfg.LLM.Local, cfg)
 	localClient := daemon.NewClient(*cfg, daemon.WithInProcEngine(inProcEngine))
-	cloudEngine := cloud.New(cfg.LLM.Cloud)
+	cloudEngine := cloud.New(cfg.LLM.Cloud, cfg)
 
 	r := router.NewRouter(localClient, cloudEngine, cfg.LLM)
 	defer func() { _ = r.Close() }()
@@ -250,83 +256,5 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		Local:       usedLocal,
 	}
 
-	if err := formatter.Format(os.Stdout, outputData); err != nil {
-		return err
-	}
-
-	// 7. Check for proposed shell command and handle execution review in interactive mode
-	if isInteractive && cmdStr != "" {
-		return handleProposedAction(ctx, cfg, cleaned, true)
-	}
-
-	return nil
-}
-
-func handleProposedAction(ctx context.Context, cfg *config.Config, responseText string, isInteractive bool) error {
-	cmdStr := shell.ExtractProposedCommand(responseText)
-	if cmdStr == "" {
-		return nil
-	}
-
-	isDestructive, reason := shell.IsDestructiveCommand(cmdStr)
-	yolo := flagYoloApproveAll || cfg.Shell.YoloApproveAll
-	autoAccept := flagAutoAccept || cfg.Shell.AutoAccept
-
-	// 1. YOLO Mode: Auto-execute everything immediately with zero prompts
-	if yolo {
-		if isInteractive {
-			fmt.Println()
-			fmt.Println(ui.CommandCard("Auto-Executing Command (--yolo-approve-all)", cmdStr))
-		}
-		return shell.ExecuteInActiveShell(ctx, cmdStr)
-	}
-
-	// 2. Auto-Accept Mode: Auto-execute non-destructive commands
-	if autoAccept && !isDestructive {
-		if isInteractive {
-			fmt.Println()
-			fmt.Println(ui.CommandCard("Auto-Executing Safe Command (--auto-accept)", cmdStr))
-		}
-		return shell.ExecuteInActiveShell(ctx, cmdStr)
-	}
-
-	// Non-interactive pipelines without YOLO/AutoAccept should not prompt
-	if !isInteractive {
-		if isDestructive {
-			return fmt.Errorf("command is destructive (%s); use --yolo-approve-all to execute in non-interactive mode", reason)
-		}
-		return nil
-	}
-
-	// 3. Interactive Destructive Guard: Requires typed confirmation
-	if isDestructive {
-		fmt.Println()
-		fmt.Println(ui.Card(
-			ui.BadgeWarning("Destructive Command Guard"),
-			fmt.Sprintf("Proposed Command:\n  %s\n\nRisk: %s", cmdStr, reason),
-			"Requires typed confirmation before execution",
-		))
-
-		confirmed, err := ui.PromptDestructiveConfirm("Warning: This command may perform destructive modifications.", "yes-execute")
-		if err != nil || !confirmed {
-			fmt.Println("Execution cancelled.")
-			return nil
-		}
-		return shell.ExecuteInActiveShell(ctx, cmdStr)
-	}
-
-	// 4. Interactive Review: [Run] [Edit] [Cancel]
-	fmt.Println()
-	fmt.Println(ui.CommandCard("Proposed Shell Command", cmdStr))
-
-	action, finalCmd, err := ui.PromptCommandReview(cmdStr)
-	if err != nil || action == ui.ActionCancel {
-		return nil
-	}
-
-	if action == ui.ActionRun {
-		return shell.ExecuteInActiveShell(ctx, finalCmd)
-	}
-
-	return nil
+	return formatter.Format(os.Stdout, outputData)
 }
