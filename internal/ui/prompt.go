@@ -93,8 +93,8 @@ func PromptModelSelection() (string, error) {
 		Title("Select an on-device model to download:").
 		Description("Robo runs locally on your machine using Google LiteRT-LM. Choose a model size:").
 		Options(
-			huh.NewOption("Gemma 4 2B (Recommended — Fast & Lightweight ~2.6 GB)", "litert-community/gemma-4-E2B-it"),
-			huh.NewOption("Gemma 4 4B (Higher Capability — ~4.8 GB)", "litert-community/gemma-4-E4B-it"),
+			huh.NewOption("Gemma 4 4B (Recommended — High Capability ~3.7 GB)", "litert-community/gemma-4-E4B-it-litert-lm"),
+			huh.NewOption("Gemma 4 2B (Fast & Lightweight ~2.6 GB)", "litert-community/gemma-4-E2B-it-litert-lm"),
 		).
 		Value(&selected)
 

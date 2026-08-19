@@ -14,7 +14,7 @@ import (
 const (
 	DefaultConfigDir         = ".config/robo"
 	DefaultConfigFile        = "config.yaml"
-	DefaultLocalModel        = "litert-community/gemma-4-E2B-it"
+	DefaultLocalModel        = "litert-community/gemma-4-E4B-it-litert-lm"
 	DefaultLocalVersion      = "v0.16.0"
 	DefaultCloudModel        = "googleai/gemini-2.5-flash"
 	DefaultCloudProvider     = "googleai"
