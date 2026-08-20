@@ -10,7 +10,7 @@ require (
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/mattn/go-isatty v0.0.24
 	github.com/spf13/cobra v1.10.2
-	github.com/vladimirvivien/litertlm-go v0.7.0
+	github.com/vladimirvivien/litertlm-go v0.7.1
 	golang.org/x/sys v0.47.0
 	gopkg.in/yaml.v3 v3.0.1
 )

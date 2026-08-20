@@ -9,6 +9,7 @@ An AI assistant designed for the shell in your terminal.
 ## Key Capabilities
 
 * **Dual-Engine Architecture:** Runs quantized models locally via `litertlm-go` (Gemma 4 E4B) for private, zero-latency inference, and connects to cloud frontier models (Google Gemini, Anthropic Claude, OpenAI, Ollama) via native REST clients.
+* **Explicit Setup (`robo init`):** Walks through model selection (Gemma 4 2B to 12B) and hardware acceleration configuration, provisioning LiteRT-LM runtime v0.16.0 dependencies.
 * **Ambient Shell Context:** Automatically reads your active OS, shell environment (Bash, Zsh, Fish, PowerShell), current working directory, and recent shell command history to contextualize prompts without manual re-typing.
 * **Hot-Start Daemon (`robod`):** Hosts the local model in memory for sub-50ms response latency, auto-spawns on demand, and shuts down after 15 minutes of inactivity.
 * **Intelligent Routing:** Automatically chooses between local and cloud engines based on prompt complexity, token count (> 4K tokens), and failure escalation.
@@ -35,20 +36,21 @@ make build
 
 ## Quickstart Walkthrough
 
-### 1. Minimal Quickstart (Zero Configuration)
-Robo works out of the box with intelligent defaults. When you run robo for the first time, it will walk you through setting up a model for local inference. Or you can customize your configuration in file `~/.config/robo/config.yaml`.
+### 1. Initialize Robo (`robo init`)
+Before running prompts, initialize Robo to configure your local on-device model and download LiteRT-LM runtime dependencies:
 
-#### On-Device Local Inference
-To run strictly on-device using local GPU/CPU hardware:
+```bash
+# Launch interactive setup wizard (Select Gemma 4 2B..12B model and GPU/CPU backend)
+robo init
 
-```yaml
-llm:
-  local:
-    enabled: true                     # Uses Gemma 4 E4B locally via LiteRT-LM (default)
+# Or run non-interactively with defaults (Gemma 4 4B + GPU)
+robo init -y
 ```
 
-#### Setup a Cloud Model
-You can enable a cloud model by configuring an entry similar to the following:
+This creates `~/.config/robo/config.yaml` and downloads the selected model weights to your local cache.
+
+#### Customizing Cloud Models
+You can configure a cloud model by editing `~/.config/robo/config.yaml`:
 
 ```yaml
 llm:
@@ -136,6 +138,7 @@ robo daemon stop
 
 | Command | Shorthand / Flags | Description |
 |---|---|---|
+| `robo init` | `-y`, `--model <name>`, `--backend <gpu\|cpu>`, `--force` | Initialize config, models, and LiteRT-LM runtime. |
 | `robo [intent]` | `-y`, `-l`, `-c`, `-o <format>` | Synthesize and execute shell commands or answer terminal queries. |
 | `robo daemon` | `start`, `stop`, `status` | Manage the background `robod` model server. |
 | `robo version` | `-o json`, `-o plain` | Print build version, commit SHA, and platform information. |

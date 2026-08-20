@@ -46,7 +46,15 @@ inspects terminal diagnostics, and executes actions with safety guardrails.`,
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 func Execute() error {
-	return RootCmd.Execute()
+	err := RootCmd.Execute()
+	if err != nil {
+		if ui.IsStdoutTerminal() && (flagOutput == "markdown" || flagOutput == "md" || flagOutput == "") {
+			fmt.Fprintln(os.Stderr, ui.ErrorCard(err.Error()))
+		} else {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		}
+	}
+	return err
 }
 
 func init() {
@@ -69,17 +77,47 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		ctx = context.Background()
 	}
 
-	// 1. Check if first-time onboarding is needed (no config file on disk and no model downloaded)
-	configExists := config.ConfigFileExists(cfgFile)
+	// 0. Check for config file specification
+	targetCfgPath := cfgFile
+	if targetCfgPath == "" {
+		targetCfgPath = config.ConfigPath()
+	}
+
+	if !config.ConfigFileExists(targetCfgPath) {
+		if ui.IsStdoutTerminal() && ui.IsStdinTerminal() {
+			fmt.Println()
+			fmt.Println(ui.Card(
+				ui.BadgeWarning("robo • Not Initialized"),
+				fmt.Sprintf("Configuration was not found at %s.", targetCfgPath),
+				"Setup required",
+			))
+			fmt.Println()
+
+			confirmed, err := ui.PromptConfirm("Would you like to initialize robo and configure local models now?")
+			if err == nil && confirmed {
+				if initErr := runInit(cmd, nil); initErr != nil {
+					return initErr
+				}
+				if len(args) == 0 {
+					return nil
+				}
+			} else {
+				if cfgFile != "" {
+					return fmt.Errorf("config file not found: %s\nSpecify a valid configuration file path, or run 'robo init'", cfgFile)
+				}
+				return fmt.Errorf("robo is not initialized: config file not found at %s\nRun 'robo init' to set up local models and configuration", targetCfgPath)
+			}
+		} else {
+			if cfgFile != "" {
+				return fmt.Errorf("config file not found: %s\nSpecify a valid configuration file path, or run 'robo init'", cfgFile)
+			}
+			return fmt.Errorf("robo is not initialized: config file not found at %s\nRun 'robo init' to set up local models and configuration", targetCfgPath)
+		}
+	}
+
 	cfg, err := config.Load(cfgFile)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
-	}
-
-	if !configExists && !engine.IsModelDownloaded(cfg.LLM.Local.Model) {
-		if err := engine.RunInitialSetup(ctx, cfg); err != nil {
-			return err
-		}
 	}
 
 	// Apply CLI flags to config overrides
@@ -90,7 +128,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		cfg.Shell.YoloApproveAll = true
 	}
 
-	// 2. Read prompt and stdin
+	// 1. Read prompt and stdin
 	var prompt string
 	var stdinContent string
 
@@ -108,7 +146,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	}
 
-	// 3. Resolve effective output format
+	// 2. Resolve effective output format
 	outputFormat := flagOutput
 	if !cmd.Flags().Changed("output") && cfg.Shell.OutputMode != "" {
 		outputFormat = cfg.Shell.OutputMode
@@ -117,6 +155,48 @@ func runRoot(cmd *cobra.Command, args []string) error {
 
 	if _, err := ui.NewFormatter(outputFormat, false, 80); err != nil {
 		return err
+	}
+
+	// 3. Validate inference environment setup
+	forceBackend := ""
+	if flagLocal {
+		forceBackend = "local-only"
+	} else if flagCloud {
+		forceBackend = "cloud-only"
+	}
+	if err := engine.ValidateInferenceSetup(cfg, forceBackend); err != nil {
+		// If local inference dependencies are missing in interactive terminal, prompt to re-initialize
+		if ui.IsStdoutTerminal() && ui.IsStdinTerminal() && cfg.LLM.Local.Enabled {
+			status := engine.CheckLocalSetup(cfg.LLM.Local)
+			if !status.HasLib || !status.HasModel {
+				fmt.Println()
+				fmt.Println(ui.Card(
+					ui.BadgeWarning("robo • Setup Required"),
+					err.Error(),
+					"",
+				))
+				fmt.Println()
+				confirmed, promptErr := ui.PromptConfirm("Would you like to run 'robo init' to download missing dependencies now?")
+				if promptErr == nil && confirmed {
+					if initErr := runInit(cmd, nil); initErr != nil {
+						return initErr
+					}
+					if len(args) == 0 {
+						return nil
+					}
+					// Reload config after re-init
+					if reloaded, loadErr := config.Load(cfgFile); loadErr == nil {
+						cfg = reloaded
+					}
+				} else {
+					return err
+				}
+			} else {
+				return err
+			}
+		} else {
+			return err
+		}
 	}
 
 	// 4. Start visual spinner immediately upon prompt receipt
@@ -131,26 +211,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	// 5. Validate inference environment setup
-	forceBackend := ""
-	if flagLocal {
-		forceBackend = "local-only"
-	} else if flagCloud {
-		forceBackend = "cloud-only"
-	}
-	if err := engine.ValidateInferenceSetup(cfg, forceBackend); err != nil {
-		if sp != nil {
-			sp.Stop()
-		}
-		if ui.IsStdoutTerminal() {
-			fmt.Fprintln(os.Stderr, ui.ErrorCard(err.Error()))
-		} else {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		}
-		return err
-	}
-
-	// 6. Assemble ambient shell context (OS, Architecture, active shell, and recent shell history)
+	// 5. Assemble ambient shell context (OS, Architecture, active shell, and recent shell history)
 	var systemPrompt strings.Builder
 	systemPrompt.WriteString(config.DefaultRoboSystemPrompt)
 	systemPrompt.WriteString("\n\n")
@@ -177,7 +238,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 7. Construct engines
+	// 6. Construct engines
 	inProcEngine := local.New(cfg.LLM.Local, cfg)
 	localClient := daemon.NewClient(*cfg, daemon.WithInProcEngine(inProcEngine))
 	cloudEngine := cloud.New(cfg.LLM.Cloud, cfg)
@@ -185,7 +246,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	r := router.NewRouter(localClient, cloudEngine, cfg.LLM)
 	defer func() { _ = r.Close() }()
 
-	// 8. Build request
+	// 7. Build request
 	req := engine.Request{
 		Prompt:       prompt,
 		SystemPrompt: systemPrompt.String(),
@@ -204,18 +265,13 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		req.ForceBackend = "cloud-only"
 	}
 
-	// 9. Execute generation
+	// 8. Execute generation
 	var fullText strings.Builder
 
 	stream, err := r.GenerateStream(ctx, req)
 	if err != nil {
 		if sp != nil {
 			sp.Stop()
-		}
-		if isInteractive {
-			fmt.Fprintln(os.Stderr, ui.ErrorCard(err.Error()))
-		} else {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		}
 		return err
 	}

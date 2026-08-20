@@ -72,7 +72,7 @@ func CheckCloudSetup(cfg config.CloudConfig) CloudSetupStatus {
 	}
 }
 
-// CheckLocalSetup checks if local inference configuration is valid and provisioned.
+// CheckLocalSetup checks if local inference configuration is valid and provisioned on disk.
 func CheckLocalSetup(cfg config.LocalConfig) LocalSetupStatus {
 	status := LocalSetupStatus{
 		LibDir:    cfg.LibDir,
@@ -81,13 +81,11 @@ func CheckLocalSetup(cfg config.LocalConfig) LocalSetupStatus {
 
 	if status.LibDir != "" && fileExists(status.LibDir) {
 		status.HasLib = true
-	} else if cfg.AutoDownload {
+	} else if IsLibDownloaded(cfg.Version) {
 		status.HasLib = true
 	}
 
-	if filepath.IsAbs(status.ModelPath) && fileExists(status.ModelPath) {
-		status.HasModel = true
-	} else if cfg.AutoDownload {
+	if IsModelDownloaded(status.ModelPath) {
 		status.HasModel = true
 	}
 
@@ -95,7 +93,7 @@ func CheckLocalSetup(cfg config.LocalConfig) LocalSetupStatus {
 	return status
 }
 
-// IsLibDownloaded checks if LiteRT-LM shared libraries are already cached locally.
+// IsLibDownloaded checks if LiteRT-LM shared libraries are already cached locally on disk.
 func IsLibDownloaded(version string) bool {
 	if version == "" {
 		version = config.DefaultLocalVersion
@@ -104,36 +102,66 @@ func IsLibDownloaded(version string) bool {
 	if err != nil {
 		return false
 	}
-	platform, err := libfetch.Platform()
-	if err != nil {
-		return false
-	}
-	targetDir := filepath.Join(dir, platform)
-	entries, err := os.ReadDir(targetDir)
+	entries, err := os.ReadDir(dir)
 	if err != nil || len(entries) == 0 {
 		return false
 	}
 	return true
 }
 
-// IsModelDownloaded checks if the specified model is present on disk or in the local cache.
-func IsModelDownloaded(modelIDOrPath string) bool {
+// FindLocalModelPath returns the absolute path to a cached or local model file on disk.
+func FindLocalModelPath(modelIDOrPath string, customCacheDir string) string {
 	if modelIDOrPath == "" {
-		return false
+		return ""
 	}
 	if fileExists(modelIDOrPath) {
-		return true
+		return modelIDOrPath
 	}
-	target, err := modelfetch.ResolveModelIdentifier(modelIDOrPath)
-	if err != nil {
-		return false
+
+	var candidates []string
+	if info, ok := LookupModel(modelIDOrPath); ok {
+		candidates = append(candidates, info.Filename)
 	}
-	cacheDir, err := modelfetch.DefaultCacheDir()
-	if err != nil {
-		return false
+	candidates = append(candidates, filepath.Base(modelIDOrPath))
+	if !strings.HasSuffix(strings.ToLower(modelIDOrPath), ".litertlm") {
+		candidates = append(candidates, filepath.Base(modelIDOrPath)+".litertlm")
 	}
-	destPath := filepath.Join(cacheDir, target.Filename)
-	return fileExists(destPath)
+
+	searchDirs := []string{}
+	if customCacheDir != "" {
+		searchDirs = append(searchDirs, customCacheDir)
+	}
+	if cacheDir, err := modelfetch.DefaultCacheDir(); err == nil {
+		searchDirs = append(searchDirs, cacheDir)
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		searchDirs = append(searchDirs,
+			filepath.Join(home, ".litertlm", "models"),
+			filepath.Join(home, "models"),
+			filepath.Join(home, ".cache", "litertlm-go", "models"),
+			filepath.Join(home, ".config", "robo", "cache"),
+		)
+	}
+
+	// Search prioritized candidate filenames across directories
+	for _, name := range candidates {
+		if name == "" {
+			continue
+		}
+		for _, dir := range searchDirs {
+			full := filepath.Join(dir, name)
+			if fileExists(full) {
+				return full
+			}
+		}
+	}
+
+	return ""
+}
+
+// IsModelDownloaded checks if the specified model is present on disk or in local cache locations.
+func IsModelDownloaded(modelIDOrPath string) bool {
+	return FindLocalModelPath(modelIDOrPath, "") != ""
 }
 
 // EnsureLocalSetup ensures the local libraries and model are downloaded via litertlm-go.
@@ -154,47 +182,62 @@ func EnsureLocalSetupWithProgress(ctx context.Context, cfg config.LocalConfig) (
 		}
 
 		if !IsLibDownloaded(libVersion) {
-			sp := ui.StartSpinner("Downloading LiteRT-LM native runtime libraries...")
-			dir, err := litertlm.FetchLib(runtime.GOOS, runtime.GOARCH, libVersion)
-			sp.Stop()
-			if err != nil {
-				return "", "", fmt.Errorf("local: fetch library: %w", err)
+			if ui.IsStdoutTerminal() {
+				sp := ui.StartSpinner("Downloading LiteRT-LM native runtime libraries...")
+				dir, err := litertlm.FetchLib(runtime.GOOS, runtime.GOARCH, libVersion)
+				sp.Stop()
+				if err != nil {
+					return "", "", fmt.Errorf("local: fetch library: %w", err)
+				}
+				libDir = dir
+				fmt.Println(ui.BadgeSuccess("✓ LiteRT-LM runtime libraries ready"))
+			} else {
+				dir, err := litertlm.FetchLib(runtime.GOOS, runtime.GOARCH, libVersion)
+				if err != nil {
+					return "", "", fmt.Errorf("local: fetch library: %w", err)
+				}
+				libDir = dir
 			}
-			libDir = dir
-			fmt.Println(ui.BadgeSuccess("✓ LiteRT-LM runtime libraries ready"))
 		} else {
 			dir, err := libfetch.DefaultDir(libVersion)
 			if err == nil {
-				platform, _ := libfetch.Platform()
-				libDir = filepath.Join(dir, platform)
+				libDir = dir
 			}
 		}
 	}
 
 	// 2. Provision model weights if needed
-	if !filepath.IsAbs(modelPath) && !fileExists(modelPath) && cfg.AutoDownload {
-		target, err := modelfetch.ResolveModelIdentifier(modelPath)
-		if err != nil {
-			return "", "", fmt.Errorf("local: resolve model %q: %w", modelPath, err)
+	foundPath := FindLocalModelPath(modelPath, cfg.CacheDir)
+	if foundPath != "" {
+		modelPath = foundPath
+	} else if cfg.AutoDownload {
+		targetURL, targetFilename := ResolveModelTarget(modelPath)
+		if targetURL == "" {
+			return "", "", fmt.Errorf("local: unable to resolve model %q", modelPath)
 		}
 
 		cacheDir := cfg.CacheDir
 		if cacheDir == "" {
 			cacheDir, _ = modelfetch.DefaultCacheDir()
 		}
-		destPath := filepath.Join(cacheDir, target.Filename)
+		destPath := filepath.Join(cacheDir, targetFilename)
 
 		if !fileExists(destPath) {
-			pb := ui.NewProgressBar(fmt.Sprintf("Downloading %s", target.Filename))
-			cachedPath, err := litertlm.FetchModel(
-				ctx,
-				modelPath,
-				litertlm.WithModelDir(cacheDir),
-				litertlm.WithModelProgress(func(downloaded, total int64, pct float64) {
+			var pb *ui.ProgressBar
+			var opts []modelfetch.Option
+			opts = append(opts, modelfetch.WithDir(cacheDir))
+
+			if ui.IsStdoutTerminal() {
+				pb = ui.NewProgressBar(fmt.Sprintf("Downloading %s", targetFilename))
+				opts = append(opts, modelfetch.WithProgress(func(downloaded, total int64, pct float64) {
 					pb.Update(downloaded, total, pct)
-				}),
-			)
-			pb.Finish(fmt.Sprintf("✓ Downloaded %s", target.Filename))
+				}))
+			}
+
+			cachedPath, err := litertlm.FetchModel(ctx, targetURL, opts...)
+			if pb != nil {
+				pb.Finish(fmt.Sprintf("✓ Downloaded %s", targetFilename))
+			}
 			if err != nil {
 				return "", "", fmt.Errorf("local: fetch model %q: %w", modelPath, err)
 			}
@@ -207,59 +250,7 @@ func EnsureLocalSetupWithProgress(ctx context.Context, cfg config.LocalConfig) (
 	return libDir, modelPath, nil
 }
 
-// RunInitialSetup informs the user that Robo is not configured, walks them through
-// selecting an on-device model, downloads dependencies with visual progress,
-// and saves the configuration.
-func RunInitialSetup(ctx context.Context, cfg *config.Config) error {
-	if !ui.IsStdoutTerminal() || !ui.IsStdinTerminal() {
-		// Non-interactive: save default config and proceed
-		return cfg.Save("")
-	}
-
-	// 1. Inform user
-	fmt.Println()
-	fmt.Println(ui.Card(
-		ui.BadgeWarning("robo • Setup Required"),
-		"Robo is not configured yet.\nLet's set up your local on-device language model to get started.",
-		"Google LiteRT-LM • Private & On-Device",
-	))
-	fmt.Println()
-
-	// 2. Prompt user to select model (Gemma 4 2B or Gemma 4 4B)
-	selectedModel, err := ui.PromptModelSelection()
-	if err != nil {
-		return fmt.Errorf("setup cancelled: %w", err)
-	}
-
-	cfg.LLM.Local.Model = selectedModel
-
-	// 3. Save configuration
-	if err := cfg.Save(""); err != nil {
-		return fmt.Errorf("save config: %w", err)
-	}
-
-	fmt.Println()
-	fmt.Println(ui.BadgeSuccess("✓ Configuration saved to " + config.ConfigPath()))
-	fmt.Println()
-
-	// 4. Download library and model dependencies with visual progress
-	_, _, err = EnsureLocalSetupWithProgress(ctx, cfg.LLM.Local)
-	if err != nil {
-		return err
-	}
-
-	fmt.Println()
-	fmt.Println(ui.Card(
-		ui.BadgeSuccess("Setup Complete"),
-		"On-device LiteRT-LM model is downloaded and ready.\nContinuing with your request...",
-		"",
-	))
-	fmt.Println()
-
-	return nil
-}
-
-// ValidateInferenceSetup verifies backend availability before running requests and returns user-friendly guidance.
+// ValidateInferenceSetup verifies backend availability before running requests and fails fast if dependencies are missing.
 func ValidateInferenceSetup(cfg *config.Config, forceBackend string) error {
 	cloudStatus := CheckCloudSetup(cfg.LLM.Cloud)
 	localStatus := CheckLocalSetup(cfg.LLM.Local)
@@ -268,8 +259,11 @@ func ValidateInferenceSetup(cfg *config.Config, forceBackend string) error {
 
 	switch target {
 	case "local-only", "local":
-		if !localStatus.Provisioned && !cfg.LLM.Local.AutoDownload {
-			return fmt.Errorf("local inference is not set up (missing model/library in %s) and auto_download is disabled", cfg.LLM.Local.CacheDir)
+		if !localStatus.HasLib {
+			return fmt.Errorf("local inference failed: LiteRT-LM runtime library (%s) was not found on disk.\nRun 'robo init' to download dependencies, or specify 'lib_dir' in %s", cfg.LLM.Local.Version, config.ConfigPath())
+		}
+		if !localStatus.HasModel {
+			return fmt.Errorf("local inference failed: model %q was not found on disk.\nRun 'robo init' to download the model, or configure a local model file in %s", cfg.LLM.Local.Model, config.ConfigPath())
 		}
 		return nil
 
@@ -280,23 +274,27 @@ func ValidateInferenceSetup(cfg *config.Config, forceBackend string) error {
 		return nil
 
 	default: // auto / hybrid
-		// If local is enabled and can auto-download or is already provisioned
+		// If local inference is enabled, fail fast if dependencies are missing on disk
 		if cfg.LLM.Local.Enabled {
-			if localStatus.Provisioned || cfg.LLM.Local.AutoDownload {
-				return nil
+			if !localStatus.HasLib {
+				return fmt.Errorf("local inference is enabled but LiteRT-LM runtime library (%s) was not found on disk.\nRun 'robo init' to download dependencies, or set llm.local.enabled=false in %s", cfg.LLM.Local.Version, config.ConfigPath())
 			}
+			if !localStatus.HasModel {
+				return fmt.Errorf("local inference is enabled but model %q was not found on disk.\nRun 'robo init' to download the model, or configure a valid model path in %s", cfg.LLM.Local.Model, config.ConfigPath())
+			}
+			return nil
 		}
-		// If cloud is enabled and configured
+
+		// Local is disabled, verify cloud availability
 		if cfg.LLM.Cloud.Enabled && cloudStatus.Configured {
 			return nil
 		}
-		if localStatus.Provisioned || cfg.LLM.Local.AutoDownload {
-			return nil
+
+		if !cloudStatus.Configured {
+			return fmt.Errorf("no language model is available: local inference is disabled and cloud API key %s is not set.\nRun 'robo init' to set up local models, or set %s in your environment", cloudStatus.APIKeyEnv, cloudStatus.APIKeyEnv)
 		}
-		if cloudStatus.Configured {
-			return nil
-		}
-		return fmt.Errorf("no language model is set up: enable auto_download in config (default) or set %s", cloudStatus.APIKeyEnv)
+
+		return nil
 	}
 }
 

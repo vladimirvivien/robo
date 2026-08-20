@@ -87,7 +87,6 @@ type RobodConfig struct {
 	Enabled   bool          `yaml:"enabled"`
 	URL       string        `yaml:"url,omitempty"`
 	AuthToken string        `yaml:"auth_token,omitempty"`
-	AutoSpawn bool          `yaml:"auto_spawn"`
 	IdleTTL   time.Duration `yaml:"idle_ttl,omitempty"`
 	TLS       *TLSConfig    `yaml:"tls,omitempty"`
 }
@@ -146,10 +145,9 @@ func NewDefaultConfig() *Config {
 			},
 		},
 		Robod: RobodConfig{
-			Enabled:   true,
-			URL:       DefaultRobodURL,
-			AutoSpawn: true,
-			IdleTTL:   DefaultRobodIdleTTL,
+			Enabled: true,
+			URL:     DefaultRobodURL,
+			IdleTTL: DefaultRobodIdleTTL,
 		},
 		Shell: ShellConfig{
 			OutputMode:        DefaultOutputMode,

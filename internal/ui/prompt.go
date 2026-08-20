@@ -91,25 +91,89 @@ func PromptConfirm(title string) (bool, error) {
 	return confirmed, nil
 }
 
-// PromptModelSelection prompts the user to select an on-device model during initial setup.
-func PromptModelSelection() (string, error) {
+// ModelChoice represents a model option displayed in the initialization wizard.
+type ModelChoice struct {
+	ID          string
+	Description string
+	Default     bool
+}
+
+// InitPreferences holds choices selected in the robo init wizard.
+type InitPreferences struct {
+	Version string
+	Model   string
+	Backend string
+}
+
+// PromptInitSelection prompts the user to select a LiteRT-LM runtime version, on-device model, and acceleration backend.
+func PromptInitSelection(modelChoices ...ModelChoice) (InitPreferences, error) {
 	StopActiveSpinner()
 
-	var selected string
-
-	selectField := huh.NewSelect[string]().
-		Title("Select an on-device model to download:").
-		Description("Robo runs locally on your machine using Google LiteRT-LM. Choose a model size:").
-		Options(
-			huh.NewOption("Gemma 4 4B (Recommended — High Capability ~3.7 GB)", "litert-community/gemma-4-E4B-it-litert-lm"),
-			huh.NewOption("Gemma 4 2B (Fast & Lightweight ~2.6 GB)", "litert-community/gemma-4-E2B-it-litert-lm"),
-		).
-		Value(&selected)
-
-	form := huh.NewForm(huh.NewGroup(selectField))
-	if err := form.Run(); err != nil {
-		return "", err
+	defaultModel := "litert-community/gemma-4-E4B-it"
+	for _, m := range modelChoices {
+		if m.Default {
+			defaultModel = m.ID
+			break
+		}
 	}
 
-	return selected, nil
+	prefs := InitPreferences{
+		Version: "v0.16.0",
+		Model:   defaultModel,
+		Backend: "gpu",
+	}
+
+	versionSelect := huh.NewSelect[string]().
+		Title("Select LiteRT-LM runtime library version:").
+		Options(
+			huh.NewOption("v0.16.0 • Recommended (Default)", "v0.16.0"),
+			huh.NewOption("v0.15.0", "v0.15.0"),
+			huh.NewOption("v0.14.0", "v0.14.0"),
+		).
+		Value(&prefs.Version)
+
+	var modelOptions []huh.Option[string]
+	if len(modelChoices) > 0 {
+		for _, m := range modelChoices {
+			modelOptions = append(modelOptions, huh.NewOption(m.Description, m.ID))
+		}
+	} else {
+		modelOptions = []huh.Option[string]{
+			huh.NewOption("Gemma 4 4B  [~2.6 GB] • Recommended (Balanced reasoning & speed)", "litert-community/gemma-4-E4B-it"),
+			huh.NewOption("Gemma 4 2B  [~1.6 GB] • Fast & lightweight on-device", "litert-community/gemma-4-E2B-it"),
+			huh.NewOption("Gemma 4 12B [~7.5 GB] • High capability reasoning & coding", "litert-community/gemma-4-12B-it"),
+			huh.NewOption("Gemma 3 1B  [~580 MB] • Ultra-compact on-device SLM", "litert-community/gemma3-1b-it-int4"),
+			huh.NewOption("Qwen 3 4B   [~2.5 GB] • Multilingual & strong tool calling", "litert-community/qwen3-4b-it"),
+		}
+	}
+
+	modelSelect := huh.NewSelect[string]().
+		Title("Select an on-device language model:").
+		Description("Models run privately on your local hardware via Google LiteRT-LM:").
+		Options(modelOptions...).
+		Value(&prefs.Model)
+
+	backendSelect := huh.NewSelect[string]().
+		Title("Select hardware acceleration backend:").
+		Options(
+			huh.NewOption("GPU (Direct3D 12 / Metal / Vulkan)", "gpu"),
+			huh.NewOption("CPU (Multi-threaded compute)", "cpu"),
+		).
+		Value(&prefs.Backend)
+
+	form := huh.NewForm(huh.NewGroup(versionSelect, modelSelect, backendSelect))
+	if err := form.Run(); err != nil {
+		return prefs, err
+	}
+
+	return prefs, nil
+}
+
+// PromptModelSelection prompts the user to select an on-device model.
+func PromptModelSelection() (string, error) {
+	prefs, err := PromptInitSelection()
+	if err != nil {
+		return "", err
+	}
+	return prefs.Model, nil
 }

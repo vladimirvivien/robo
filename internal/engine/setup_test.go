@@ -60,36 +60,35 @@ func TestValidateInferenceSetup(t *testing.T) {
 		}
 	})
 
-	t.Run("local-only fails when missing and auto-download disabled", func(t *testing.T) {
+	t.Run("local-only fails when dependency files are missing on disk", func(t *testing.T) {
 		cfg := config.NewDefaultConfig()
-		cfg.LLM.Local.AutoDownload = false
 		cfg.LLM.Local.LibDir = "/nonexistent/lib/dir"
 		cfg.LLM.Local.Model = "/nonexistent/model.bin"
 		err := engine.ValidateInferenceSetup(cfg, "local-only")
 		if err == nil {
-			t.Error("expected error for local-only when missing and auto-download disabled, got nil")
+			t.Error("expected error for local-only when missing files, got nil")
 		}
 	})
 
-	t.Run("auto succeeds when auto-download is enabled", func(t *testing.T) {
+	t.Run("auto succeeds with cloud when local is disabled", func(t *testing.T) {
 		cfg := config.NewDefaultConfig()
-		cfg.LLM.Local.AutoDownload = true
+		cfg.LLM.Local.Enabled = false
+		cfg.LLM.Cloud.Enabled = true
+		cfg.LLM.Cloud.APIKey = "valid-cloud-key"
 		err := engine.ValidateInferenceSetup(cfg, "auto")
 		if err != nil {
-			t.Errorf("expected success for auto when auto-download is enabled, got %v", err)
+			t.Errorf("expected success for cloud when local is disabled, got %v", err)
 		}
 	})
 
-	t.Run("auto fails when neither local nor cloud is available", func(t *testing.T) {
+	t.Run("auto fails when local is enabled but files are missing on disk", func(t *testing.T) {
 		cfg := config.NewDefaultConfig()
-		cfg.LLM.Local.AutoDownload = false
+		cfg.LLM.Local.Enabled = true
 		cfg.LLM.Local.LibDir = "/nonexistent/lib/dir"
 		cfg.LLM.Local.Model = "/nonexistent/model.bin"
-		cfg.LLM.Cloud.APIKey = ""
-		cfg.LLM.Cloud.Enabled = false
 		err := engine.ValidateInferenceSetup(cfg, "auto")
 		if err == nil {
-			t.Error("expected error when neither local nor cloud is available, got nil")
+			t.Error("expected error when local is enabled but files are missing on disk, got nil")
 		}
 	})
 }

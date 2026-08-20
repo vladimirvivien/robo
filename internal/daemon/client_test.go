@@ -169,7 +169,6 @@ func TestClient_ExplicitRemoteURL(t *testing.T) {
 	cfg := *config.NewDefaultConfig()
 	cfg.Robod.URL = remoteURL
 	cfg.Robod.AuthToken = token
-	cfg.Robod.AutoSpawn = false
 
 	client := daemon.NewClient(cfg,
 		daemon.WithLauncher(func() error {
@@ -224,7 +223,6 @@ func TestClient_TLSServerAndClient(t *testing.T) {
 	// 1. Client with CA certificate
 	cfg := *config.NewDefaultConfig()
 	cfg.Robod.URL = httpsURL
-	cfg.Robod.AutoSpawn = false
 	cfg.Robod.TLS = &config.TLSConfig{CAFile: certPath}
 
 	client := daemon.NewClient(cfg,

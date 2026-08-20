@@ -85,6 +85,7 @@ func runDaemonStart(cmd *cobra.Command, args []string) error {
 			subCmd.Args = append(subCmd.Args, "--config", cfgFile)
 		}
 
+		daemon.DetachCmd(subCmd)
 		if err := subCmd.Start(); err != nil {
 			return fmt.Errorf("start daemon process: %w", err)
 		}

@@ -85,9 +85,23 @@ func (c *Context) FormatPromptContext() string {
 		fmt.Fprintf(&sb, "Current Directory: %s\n", c.Cwd)
 	}
 	if len(c.RecentCommands) > 0 {
-		sb.WriteString("Recent Shell History:\n")
-		for i, cmd := range c.RecentCommands {
-			fmt.Fprintf(&sb, "  %d. %s\n", i+1, cmd)
+		var filtered []string
+		for _, cmd := range c.RecentCommands {
+			clean := strings.TrimSpace(cmd)
+			// Filter out self-referential robo invocations to avoid confusing SLMs
+			lower := strings.ToLower(clean)
+			if strings.HasPrefix(lower, "robo ") || lower == "robo" ||
+				strings.HasPrefix(lower, ".\\robo") || strings.HasPrefix(lower, "./robo") ||
+				strings.HasPrefix(lower, ".\\bin\\robo") || strings.HasPrefix(lower, "./bin/robo") {
+				continue
+			}
+			filtered = append(filtered, clean)
+		}
+		if len(filtered) > 0 {
+			sb.WriteString("Recent Shell History:\n")
+			for i, cmd := range filtered {
+				fmt.Fprintf(&sb, "  %d. %s\n", i+1, cmd)
+			}
 		}
 	}
 	return sb.String()

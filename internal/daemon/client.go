@@ -164,9 +164,9 @@ func (c *Client) resolveEndpoint(ctx context.Context) (*endpointTarget, error) {
 		}, nil
 	}
 
-	// 3. If robod disabled or auto-spawn disabled, fail fast to in-process fallback
-	if !c.cfg.Robod.Enabled || !c.cfg.Robod.AutoSpawn {
-		return nil, errors.New("robod: auto-spawn disabled or daemon inactive")
+	// 3. If robod disabled, fail fast to in-process fallback
+	if !c.cfg.Robod.Enabled {
+		return nil, errors.New("robod: daemon disabled")
 	}
 
 	// 4. Try spawning local daemon

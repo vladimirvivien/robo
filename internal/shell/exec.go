@@ -100,6 +100,8 @@ func ExecuteInActiveShellWithCapture(ctx context.Context, cmdStr string, isInter
 		cmd.Stderr = &buf
 	}
 
+	setSysProcAttr(cmd, isInteractive)
+
 	err := cmd.Run()
 	exitCode := 0
 	if err != nil {
