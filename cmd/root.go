@@ -50,7 +50,6 @@ func Execute() error {
 }
 
 func init() {
-	_ = os.Setenv("GENKIT_LOG_LEVEL", "warn")
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	log.SetOutput(io.Discard)
 
