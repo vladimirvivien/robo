@@ -14,6 +14,9 @@ var (
 	spinnerFrames    = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	styleSpinner     = lipgloss.NewStyle().Bold(true).Foreground(colorCharple)
 	styleSpinnerText = lipgloss.NewStyle().Foreground(colorSmoke)
+
+	activeSpinnerMu sync.Mutex
+	activeSpinner   *Spinner
 )
 
 // Spinner represents an interactive terminal busy indicator.
@@ -26,8 +29,22 @@ type Spinner struct {
 	out     io.Writer
 }
 
+// StopActiveSpinner immediately stops and clears any currently running terminal spinner.
+func StopActiveSpinner() {
+	activeSpinnerMu.Lock()
+	sp := activeSpinner
+	activeSpinner = nil
+	activeSpinnerMu.Unlock()
+
+	if sp != nil {
+		sp.Stop()
+	}
+}
+
 // StartSpinner creates and starts an animated spinner on stdout if in a terminal.
 func StartSpinner(message string) *Spinner {
+	StopActiveSpinner()
+
 	s := &Spinner{
 		message: message,
 		stopCh:  make(chan struct{}),
@@ -39,6 +56,10 @@ func StartSpinner(message string) *Spinner {
 		close(s.doneCh)
 		return s
 	}
+
+	activeSpinnerMu.Lock()
+	activeSpinner = s
+	activeSpinnerMu.Unlock()
 
 	go s.run()
 	return s
@@ -62,10 +83,8 @@ func (s *Spinner) run() {
 	for {
 		select {
 		case <-s.stopCh:
-			// Clear spinner line
-			if _, err := fmt.Fprint(s.out, "\r\033[K"); err != nil {
-				return
-			}
+			// Clear spinner line completely
+			_, _ = fmt.Fprint(s.out, "\r\033[2K\r")
 			return
 		case <-ticker.C:
 			s.mu.Lock()
@@ -104,6 +123,12 @@ func (s *Spinner) Stop() {
 	}
 	s.stopped = true
 	s.mu.Unlock()
+
+	activeSpinnerMu.Lock()
+	if activeSpinner == s {
+		activeSpinner = nil
+	}
+	activeSpinnerMu.Unlock()
 
 	close(s.stopCh)
 	<-s.doneCh

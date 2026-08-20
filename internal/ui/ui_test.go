@@ -104,6 +104,10 @@ func TestSpinner(t *testing.T) {
 	sp.Stop()
 	// Calling stop twice should be safe
 	sp.Stop()
+
+	// Test global StopActiveSpinner
+	_ = ui.StartSpinner("Another test...")
+	ui.StopActiveSpinner()
 }
 
 func TestProgressBar(t *testing.T) {

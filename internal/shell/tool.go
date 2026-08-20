@@ -39,6 +39,9 @@ func (h *ToolHandler) Handle(ctx context.Context, in ShellInput) (ShellOutput, e
 		return ShellOutput{Error: "empty command"}, nil
 	}
 
+	// Halt and clear any active background spinner before displaying interactive UI
+	ui.StopActiveSpinner()
+
 	// Format proposed command card
 	fmt.Println()
 	title := "Proposed Shell Command"

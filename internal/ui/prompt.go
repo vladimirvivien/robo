@@ -18,6 +18,8 @@ const (
 
 // PromptCommandReview presents [Run] [Edit] [Cancel] for a proposed command.
 func PromptCommandReview(command string) (Action, string, error) {
+	StopActiveSpinner()
+
 	var selected string
 
 	selectField := huh.NewSelect[string]().
@@ -53,6 +55,8 @@ func PromptCommandReview(command string) (Action, string, error) {
 
 // PromptDestructiveConfirm prompts the user to type confirmation for dangerous commands.
 func PromptDestructiveConfirm(warning, requiredKeyword string) (bool, error) {
+	StopActiveSpinner()
+
 	if requiredKeyword == "" {
 		requiredKeyword = "yes-delete"
 	}
@@ -72,6 +76,8 @@ func PromptDestructiveConfirm(warning, requiredKeyword string) (bool, error) {
 
 // PromptConfirm prompts for simple boolean confirmation.
 func PromptConfirm(title string) (bool, error) {
+	StopActiveSpinner()
+
 	var confirmed bool
 	confirmField := huh.NewConfirm().
 		Title(title).
@@ -87,6 +93,8 @@ func PromptConfirm(title string) (bool, error) {
 
 // PromptModelSelection prompts the user to select an on-device model during initial setup.
 func PromptModelSelection() (string, error) {
+	StopActiveSpinner()
+
 	var selected string
 
 	selectField := huh.NewSelect[string]().
