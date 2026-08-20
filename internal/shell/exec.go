@@ -1,7 +1,9 @@
 package shell
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -45,7 +47,7 @@ func ExtractProposedCommand(text string) string {
 		firstWord := strings.Fields(line)
 		if len(firstWord) > 0 {
 			switch firstWord[0] {
-			case "git", "docker", "kubectl", "find", "grep", "ls", "cat", "go", "cargo", "npm", "yarn", "pnpm", "python", "tar", "zip", "unzip", "curl", "wget", "ps", "kill", "systemctl":
+			case "git", "jj", "docker", "kubectl", "find", "grep", "ls", "cat", "go", "cargo", "npm", "yarn", "pnpm", "python", "tar", "zip", "unzip", "curl", "wget", "ps", "kill", "systemctl":
 				return line
 			}
 		}
@@ -56,6 +58,13 @@ func ExtractProposedCommand(text string) string {
 
 // ExecuteInActiveShell executes a command string directly inside the user's active shell with stdio attached.
 func ExecuteInActiveShell(ctx context.Context, cmdStr string) error {
+	_, _, err := ExecuteInActiveShellWithCapture(ctx, cmdStr, true)
+	return err
+}
+
+// ExecuteInActiveShellWithCapture executes a command string directly inside the user's active shell,
+// displaying to os.Stdout/os.Stderr if interactive, and returning captured combined output and exit code.
+func ExecuteInActiveShellWithCapture(ctx context.Context, cmdStr string, isInteractive bool) (string, int, error) {
 	shellType := DetectShell()
 
 	var cmd *exec.Cmd
@@ -81,9 +90,25 @@ func ExecuteInActiveShell(ctx context.Context, cmdStr string) error {
 		}
 	}
 
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	var buf bytes.Buffer
+	if isInteractive {
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = io.MultiWriter(os.Stdout, &buf)
+		cmd.Stderr = io.MultiWriter(os.Stderr, &buf)
+	} else {
+		cmd.Stdout = &buf
+		cmd.Stderr = &buf
+	}
 
-	return cmd.Run()
+	err := cmd.Run()
+	exitCode := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			exitCode = 1
+		}
+	}
+
+	return strings.TrimRight(buf.String(), "\r\n"), exitCode, err
 }

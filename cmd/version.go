@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/vladimirvivien/robo/internal/ui"
@@ -47,7 +48,9 @@ var VersionCmd = &cobra.Command{
 	Long:  `Displays version string, Git commit SHA, build timestamp, and runtime platform.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		info := GetBuildInfo()
-		if flagVersionJSON || flagOutput == "json" {
+		outMode := strings.ToLower(strings.TrimSpace(flagOutput))
+
+		if flagVersionJSON || outMode == "json" {
 			data, err := json.MarshalIndent(info, "", "  ")
 			if err != nil {
 				return err
@@ -56,7 +59,7 @@ var VersionCmd = &cobra.Command{
 			return nil
 		}
 
-		if ui.IsStdoutTerminal() && flagOutput != "plain" {
+		if ui.IsStdoutTerminal() && (outMode == "markdown" || outMode == "md" || outMode == "") {
 			content := fmt.Sprintf("Version:    %s\nCommit:     %s\nBuild Date: %s\nGo Version: %s\nPlatform:   %s",
 				info.Version, info.Commit, info.BuildDate, info.GoVersion, info.Platform)
 			fmt.Println(ui.Card("Robo Build Information", content, ""))

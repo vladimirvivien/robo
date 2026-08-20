@@ -72,72 +72,58 @@ func runDaemonStart(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("get executable: %w", err)
 		}
 
-		sp := ui.StartSpinner("Starting background robod daemon...")
-		defer sp.Stop()
+		outMode := strings.ToLower(strings.TrimSpace(flagOutput))
+		isInteractive := ui.IsStdoutTerminal() && (outMode == "markdown" || outMode == "md" || outMode == "")
+		var sp *ui.Spinner
+		if isInteractive {
+			sp = ui.StartSpinner("Starting background robod daemon...")
+			defer sp.Stop()
+		}
 
 		subCmd := exec.Command(executable, "daemon", "start", "--foreground")
 		if cfgFile != "" {
 			subCmd.Args = append(subCmd.Args, "--config", cfgFile)
 		}
-		daemon.DetachCmd(subCmd)
 
 		if err := subCmd.Start(); err != nil {
-			return fmt.Errorf("spawn background robod: %w", err)
+			return fmt.Errorf("start daemon process: %w", err)
 		}
 
-		// Wait for daemon to become ready
-		client := &http.Client{Timeout: 300 * time.Millisecond}
-		healthURL := fmt.Sprintf("%s/health", strings.TrimRight(cfg.Robod.URL, "/"))
-		if healthURL == "" {
-			healthURL = "http://127.0.0.1:8765/health"
+		// Wait for daemon to become healthy
+		client := daemon.NewClient(*cfg)
+		_, err = client.EnsureDaemon(ctx)
+
+		if sp != nil {
+			sp.Stop()
 		}
 
-		deadline := time.Now().Add(5 * time.Second)
-		ready := false
-		for time.Now().Before(deadline) {
-			resp, err := client.Get(healthURL)
-			if err == nil && resp.StatusCode == http.StatusOK {
-				_ = resp.Body.Close()
-				ready = true
-				break
-			}
-			if resp != nil {
-				_ = resp.Body.Close()
-			}
-			time.Sleep(100 * time.Millisecond)
+		if err != nil {
+			return fmt.Errorf("daemon failed to reach ready state: %w", err)
 		}
 
-		sp.Stop()
-
-		if ready {
-			fmt.Printf("robod daemon is running at %s (PID: %d)\n", cfg.Robod.URL, subCmd.Process.Pid)
+		if isInteractive {
+			fmt.Println(ui.BadgeSuccess(fmt.Sprintf("✓ robod daemon started (PID: %d)", subCmd.Process.Pid)))
 		} else {
-			fmt.Printf("Started background robod daemon (PID: %d) - initializing...\n", subCmd.Process.Pid)
+			fmt.Printf("robod daemon started (PID: %d)\n", subCmd.Process.Pid)
 		}
 		return nil
 	}
 
-	// Foreground execution
-	eng := local.New(cfg.LLM.Local)
-	defer func() { _ = eng.Close() }()
+	// Foreground mode: start server directly
+	eng := local.New(cfg.LLM.Local, cfg)
 
-	var tlsCert, tlsKey string
-	if cfg.Robod.TLS != nil {
-		tlsCert = cfg.Robod.TLS.CertFile
-		tlsKey = cfg.Robod.TLS.KeyFile
-	}
-
-	serverOpts := daemon.ServerOptions{
+	opts := daemon.ServerOptions{
 		URL:       cfg.Robod.URL,
+		IdleTTL:   cfg.Robod.IdleTTL,
 		AuthToken: cfg.Robod.AuthToken,
 		ModelName: cfg.LLM.Local.Model,
-		StatePath: daemon.StatePath(),
-		IdleTTL:   cfg.Robod.IdleTTL,
-		TLSCert:   tlsCert,
-		TLSKey:    tlsKey,
+	}
+	if cfg.Robod.TLS != nil {
+		opts.TLSCert = cfg.Robod.TLS.CertFile
+		opts.TLSKey = cfg.Robod.TLS.KeyFile
 	}
 
-	server, err := daemon.NewServer(eng, serverOpts)
+	server, err := daemon.NewServer(eng, opts)
 	if err != nil {
 		return fmt.Errorf("create server: %w", err)
 	}
@@ -181,10 +167,21 @@ func runDaemonStop(cmd *cobra.Command, args []string) error {
 }
 
 func runDaemonStatus(cmd *cobra.Command, args []string) error {
+	outMode := strings.ToLower(strings.TrimSpace(flagOutput))
+	isInteractive := ui.IsStdoutTerminal() && (outMode == "markdown" || outMode == "md" || outMode == "")
+
 	statePath := daemon.StatePath()
 	state, err := daemon.LoadState(statePath)
 	if err != nil {
-		fmt.Println(ui.Card("robod Status", "Daemon is currently inactive (stopped).", "Run 'robo daemon start' to launch"))
+		if outMode == "json" {
+			fmt.Println(`{"status": "stopped", "running": false}`)
+			return nil
+		}
+		if isInteractive {
+			fmt.Println(ui.Card("robod Status", "Daemon is currently inactive (stopped).", "Run 'robo daemon start' to launch"))
+			return nil
+		}
+		fmt.Println("robod is currently stopped")
 		return nil
 	}
 
@@ -193,25 +190,49 @@ func runDaemonStatus(cmd *cobra.Command, args []string) error {
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Get(healthURL)
 	if err != nil || resp.StatusCode != http.StatusOK {
-		fmt.Println(ui.ErrorCard(fmt.Sprintf("robod state found at %s (PID %d), but server is unreachable.\nCleaning up stale state.", state.URL, state.PID)))
 		_ = daemon.RemoveState(statePath)
+		if outMode == "json" {
+			fmt.Println(`{"status": "unreachable", "running": false}`)
+			return nil
+		}
+		if isInteractive {
+			fmt.Println(ui.ErrorCard(fmt.Sprintf("robod state found at %s (PID %d), but server is unreachable.\nCleaning up stale state.", state.URL, state.PID)))
+			return nil
+		}
+		fmt.Fprintf(os.Stderr, "robod at %s (PID %d) is unreachable. Cleaned up stale state.\n", state.URL, state.PID)
 		return nil
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	var health map[string]any
-	_ = json.NewDecoder(resp.Body).Decode(&health)
-
 	uptime := time.Since(state.StartedAt).Truncate(time.Second)
-	content := fmt.Sprintf(
-		"Status:   Active (Running)\nURL:      %s\nPID:      %d\nModel:    %s\nUptime:   %s\nState:    %s",
-		state.URL,
-		state.PID,
-		state.Model,
-		uptime,
-		filepath.Base(statePath),
-	)
+	if outMode == "json" {
+		statusData := map[string]any{
+			"status":     "running",
+			"running":    true,
+			"url":        state.URL,
+			"pid":        state.PID,
+			"model":      state.Model,
+			"uptime_sec": int(uptime.Seconds()),
+		}
+		data, _ := json.MarshalIndent(statusData, "", "  ")
+		fmt.Println(string(data))
+		return nil
+	}
 
-	fmt.Println(ui.Card("robod Daemon Status", content, "Hot-start ready"))
+	if isInteractive {
+		content := fmt.Sprintf(
+			"Status:   Active (Running)\nURL:      %s\nPID:      %d\nModel:    %s\nUptime:   %s\nState:    %s",
+			state.URL,
+			state.PID,
+			state.Model,
+			uptime,
+			filepath.Base(statePath),
+		)
+		fmt.Println(ui.Card("robod Daemon Status", content, "Hot-start ready"))
+		return nil
+	}
+
+	fmt.Printf("robod is running at %s (PID: %d, Model: %s, Uptime: %s)\n",
+		state.URL, state.PID, state.Model, uptime)
 	return nil
 }

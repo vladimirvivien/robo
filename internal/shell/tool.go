@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/vladimirvivien/robo/internal/config"
 	"github.com/vladimirvivien/robo/internal/ui"
@@ -42,7 +43,34 @@ func (h *ToolHandler) Handle(ctx context.Context, in ShellInput) (ShellOutput, e
 	// Halt and clear any active background spinner before displaying interactive UI
 	ui.StopActiveSpinner()
 
-	// Format proposed command card
+	outputMode := ""
+	if h.cfg != nil {
+		outputMode = strings.ToLower(strings.TrimSpace(h.cfg.Shell.OutputMode))
+	}
+	isInteractive := ui.IsStdoutTerminal() && (outputMode == "" || outputMode == "markdown" || outputMode == "md")
+
+	// If non-interactive (piped to jq, -o json, -o code, -o plain):
+	if !isInteractive {
+		if h.cfg != nil && h.cfg.Shell.YoloApproveAll {
+			out, exitCode, err := ExecuteInActiveShellWithCapture(ctx, cmdStr, false)
+			if err != nil {
+				return ShellOutput{Output: out, Error: err.Error(), ExitCode: exitCode}, nil
+			}
+			return ShellOutput{Output: out, ExitCode: 0}, nil
+		}
+
+		isDestructive, _ := IsDestructiveCommand(cmdStr)
+		if !isDestructive {
+			out, exitCode, err := ExecuteInActiveShellWithCapture(ctx, cmdStr, false)
+			if err != nil {
+				return ShellOutput{Output: out, Error: err.Error(), ExitCode: exitCode}, nil
+			}
+			return ShellOutput{Output: out, ExitCode: 0}, nil
+		}
+		return ShellOutput{Error: "destructive command requires interactive confirmation", ExitCode: 1}, nil
+	}
+
+	// Interactive mode: display proposed command card
 	fmt.Println()
 	title := "Proposed Shell Command"
 	if in.Description != "" {
@@ -52,11 +80,11 @@ func (h *ToolHandler) Handle(ctx context.Context, in ShellInput) (ShellOutput, e
 
 	// If YOLO approve all is enabled, execute directly without prompting
 	if h.cfg != nil && h.cfg.Shell.YoloApproveAll {
-		err := ExecuteInActiveShell(ctx, cmdStr)
+		out, exitCode, err := ExecuteInActiveShellWithCapture(ctx, cmdStr, true)
 		if err != nil {
-			return ShellOutput{Error: err.Error(), ExitCode: 1}, nil
+			return ShellOutput{Output: out, Error: err.Error(), ExitCode: exitCode}, nil
 		}
-		return ShellOutput{Output: "Command executed successfully.", ExitCode: 0}, nil
+		return ShellOutput{Output: out, ExitCode: 0}, nil
 	}
 
 	// Check for destructive command guardrails
@@ -65,28 +93,29 @@ func (h *ToolHandler) Handle(ctx context.Context, in ShellInput) (ShellOutput, e
 		confirmed, err := ui.PromptDestructiveConfirm(warning, "yes-delete")
 		if err != nil || !confirmed {
 			fmt.Println(ui.BadgeWarning("Execution aborted: destructive confirmation not confirmed"))
-			return ShellOutput{Output: "Execution cancelled by user.", ExitCode: 1}, nil
+			return ShellOutput{ExitCode: 1}, nil
 		}
 	} else if h.cfg != nil && h.cfg.Shell.AutoAccept {
 		// Auto-accept safe command
-		err := ExecuteInActiveShell(ctx, cmdStr)
+		out, exitCode, err := ExecuteInActiveShellWithCapture(ctx, cmdStr, true)
 		if err != nil {
-			return ShellOutput{Error: err.Error(), ExitCode: 1}, nil
+			return ShellOutput{Output: out, Error: err.Error(), ExitCode: exitCode}, nil
 		}
-		return ShellOutput{Output: "Command executed successfully.", ExitCode: 0}, nil
+		return ShellOutput{Output: out, ExitCode: 0}, nil
 	}
 
 	// Interactive review prompt: [Run] [Edit] [Cancel]
 	action, editedCmd, err := ui.PromptCommandReview(cmdStr)
 	if err != nil || action == ui.ActionCancel {
 		fmt.Println("Execution cancelled.")
-		return ShellOutput{Output: "Execution cancelled by user.", ExitCode: 0}, nil
+		return ShellOutput{ExitCode: 0}, nil
 	}
 
-	if err := ExecuteInActiveShell(ctx, editedCmd); err != nil {
+	out, exitCode, err := ExecuteInActiveShellWithCapture(ctx, editedCmd, true)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "command error: %v\n", err)
-		return ShellOutput{Error: err.Error(), ExitCode: 1}, nil
+		return ShellOutput{Output: out, Error: err.Error(), ExitCode: exitCode}, nil
 	}
 
-	return ShellOutput{Output: "Command executed successfully.", ExitCode: 0}, nil
+	return ShellOutput{Output: out, ExitCode: 0}, nil
 }

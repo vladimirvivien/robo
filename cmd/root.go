@@ -113,6 +113,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	if !cmd.Flags().Changed("output") && cfg.Shell.OutputMode != "" {
 		outputFormat = cfg.Shell.OutputMode
 	}
+	cfg.Shell.OutputMode = outputFormat
 
 	if _, err := ui.NewFormatter(outputFormat, false, 80); err != nil {
 		return err
@@ -255,6 +256,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		Response:    cleaned,
 		Explanation: explanation,
 		Command:     cmdStr,
+		Output:      cleaned,
 		Provider:    providerName,
 		Model:       modelName,
 		Local:       usedLocal,
@@ -265,7 +267,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// In interactive mode, if a command was synthesized but not yet executed, prompt review
+	// In interactive mode, if a command was synthesized in response text but not yet executed via tool, prompt review
 	if isInteractive && cmdStr != "" {
 		toolHandler := shell.NewToolHandler(cfg)
 		_, _ = toolHandler.Handle(ctx, shell.ShellInput{
