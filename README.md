@@ -2,17 +2,17 @@
 
 An AI assistant designed for the shell in your terminal.
 
-`robo` uses an on-device small language model (SLM) with cloud frontier models to generate shell commands from prompts and interact with the OS. `robo` also supports multi-turn REPL sessions and Unix pipe composability.
+`robo` uses an on-device small language model (SLM) along with cloud frontier models to generate shell commands from natural-language prompts, explain terminal diagnostics, and execute tasks directly in your active shell using your recent command history as context.
 
 ---
 
 ## Key Capabilities
 
-* **Dual-Engine Architecture:** Runs quantized models locally via `litertlm-go` (Gemma 4 E4B) for private, zero-latency inference, and connects to cloud frontier models (Google Gemini, Anthropic Claude, OpenAI) via Genkit.
+* **Dual-Engine Architecture:** Runs quantized models locally via `litertlm-go` (Gemma 4 E4B) for private, zero-latency inference, and connects to cloud frontier models (Google Gemini, Anthropic Claude, OpenAI, Ollama) via native REST clients.
+* **Ambient Shell Context:** Automatically reads your active OS, shell environment (Bash, Zsh, Fish, PowerShell), current working directory, and recent shell command history to contextualize prompts without manual re-typing.
 * **Hot-Start Daemon (`robod`):** Hosts the local model in memory for sub-50ms response latency, auto-spawns on demand, and shuts down after 15 minutes of inactivity.
 * **Intelligent Routing:** Automatically chooses between local and cloud engines based on prompt complexity, token count (> 4K tokens), and failure escalation.
-* **Shell Assistant (`robo do`):** Synthesizes shell commands from natural language, with interactive review (`[Run] [Edit] [Cancel]`) and typed confirmation guards for destructive operations.
-* **Interactive REPL (`robo chat`):** Multi-turn terminal interface with Lipgloss cards, streaming Markdown, and pure-Go SQLite conversation persistence.
+* **Integrated Command Synthesis & Execution:** Translates natural language into commands with interactive review (`[Run] [Edit] [Cancel]`) and typed confirmation guards (`yes-delete`) for destructive operations.
 * **Unix Shell Composability:** Automatically formats for human viewing in interactive TTYs, while emitting raw unformatted streams when piped to downstream tools.
 
 ---
@@ -36,7 +36,7 @@ make build
 ## Quickstart Walkthrough
 
 ### 1. Minimal Quickstart (Zero Configuration)
-Robo works out of the box with intelligent defaults. When you run robo for the first time, it will walk you through setting up a model for local inference. Or you can follow the directions below to customize your configuration in file `~/.config/robo/config.yaml`.
+Robo works out of the box with intelligent defaults. When you run robo for the first time, it will walk you through setting up a model for local inference. Or you can customize your configuration in file `~/.config/robo/config.yaml`.
 
 #### On-Device Local Inference
 To run strictly on-device using local GPU/CPU hardware:
@@ -53,44 +53,40 @@ You can enable a cloud model by configuring an entry similar to the following:
 ```yaml
 llm:
   cloud:
-    provider: "googleai"              # "googleai", "anthropic", or "openai"
+    provider: "googleai"              # "googleai", "anthropic", "openai", or "ollama"
     model: "googleai/gemini-2.5-flash"
 ```
 ---
 
-### 2. Direct Prompts
-Ask questions directly from your terminal. Robo automatically decides whether to answer on-device or escalate to the cloud:
+### 2. Command Synthesis & Interactive Execution
+Ask Robo to accomplish any task in natural language. Robo synthesizes the command tailored to your active OS and shell:
 
 ```bash
-# Auto-routed query
-robo "Explain how Go channels work under the hood"
-
-# Force local-only execution
-robo -l "Write a regex to validate IPv4 addresses"
-
-# Force cloud-only execution for large-context tasks
-robo -c "Review this architecture pattern for distributed consensus"
-```
-
----
-
-### 3. Shell Command Assistant (`robo do`)
-Generate executable shell commands tailored to your active OS and shell:
-
-```bash
-robo do "find all files modified in the last 24 hours over 100MB"
+robo "find all files modified in the last 24 hours over 100MB"
 ```
 
 Robo displays the proposed command in an interactive card:
-* `[Run]` — Executes the command immediately.
+* `[Run]` — Executes the command immediately in your active shell.
 * `[Edit]` — Opens the command in your line editor.
 * `[Cancel]` — Aborts execution.
 
 For potentially destructive commands (`rm -rf`, `DROP TABLE`, `kill -9`), Robo requires typing confirmation (`yes-delete`) before running.
 
+#### Auto-Accept Execution
+```bash
+# Auto-run safe, non-destructive commands without prompt
+robo -y "list listening tcp ports"
+
+# Force local-only execution
+robo -l "extract all .tar.gz archives in current directory"
+
+# Force cloud-only execution for large-context tasks
+robo -c "Review this docker-compose configuration"
+```
+
 ---
 
-### 4. Piped Input & Shell Diagnostics
+### 3. Piped Input & Shell Diagnostics
 Pipe file contents, logs, or command errors directly into Robo:
 
 ```bash
@@ -106,24 +102,21 @@ robo "Generate a JSON schema for a user profile" -o json
 
 ---
 
-### 5. Interactive Multi-Turn REPL (`robo chat`)
-Launch the interactive conversational console:
+### 4. Ambient Shell History Context
+Robo automatically inspects your recent command history to understand context. For example, if you just ran a failing build or git command:
 
 ```bash
-robo chat
-```
+# After running a failing command:
+cargo build
+# error: could not find `Cargo.toml` in `/home/user/project`
 
-* Multi-turn conversations are automatically stored in `~/.config/robo/history.db`.
-* In-session commands:
-  * `/local` — Switch active engine to local on-device SLM.
-  * `/cloud` — Switch active engine to cloud LLM.
-  * `/clear` — Clear current session history.
-  * `/save <file>` — Export conversation transcript.
-  * `/exit` or `Ctrl+D` — Exit REPL.
+# Robo automatically knows what command you just ran:
+robo "how do i fix that error?"
+```
 
 ---
 
-### 6. Daemon Management (`robo daemon`)
+### 5. Daemon Management (`robo daemon`)
 `robod` launches automatically in the background when needed, but can also be controlled manually:
 
 ```bash
@@ -143,17 +136,16 @@ robo daemon stop
 
 | Command | Shorthand / Flags | Description |
 |---|---|---|
-| `robo [prompt]` | `-l`, `-c`, `-o <format>` | Query Robo directly or via piped stdin. |
-| `robo do [intent]` | `--shell <name>` | Synthesize and execute a shell command with confirmation. |
-| `robo chat` | `--session <id>` | Launch the interactive multi-turn REPL. |
+| `robo [intent]` | `-y`, `-l`, `-c`, `-o <format>` | Synthesize and execute shell commands or answer terminal queries. |
 | `robo daemon` | `start`, `stop`, `status` | Manage the background `robod` model server. |
 | `robo version` | `-o json`, `-o plain` | Print build version, commit SHA, and platform information. |
 
-### Global Output Formats (`-o` / `--output`)
-* `markdown` (default in TTY) — Rich styled Markdown rendered via Glamour.
-* `plain` — Plain text output without ANSI color escape sequences.
-* `json` — Structured JSON payload.
-* `code` — Extracts and emits only fenced code blocks.
+### Global Flags
+* `-y`, `--auto-accept` — Automatically execute safe, non-destructive commands without prompting.
+* `--yolo-approve-all` — Auto-accept and execute all commands including destructive ones.
+* `-l`, `--local-only` — Force execution on local on-device SLM.
+* `-c`, `--cloud-only` — Force execution on cloud frontier model.
+* `-o`, `--output <format>` — Global output format (`markdown`, `plain`, `json`, `code`).
 
 ---
 

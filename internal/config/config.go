@@ -23,7 +23,6 @@ const (
 	DefaultRobodURL          = "http://127.0.0.1:8765"
 	DefaultRobodIdleTTL      = 15 * time.Minute
 	DefaultOutputMode        = "markdown"
-	DefaultSessionMode       = "daily"
 	DefaultInputPromptPrefix = "🤖 robo>"
 	DefaultShellAlias        = "ai"
 	DefaultCloudAPIKeyEnv    = "GEMINI_API_KEY"
@@ -114,7 +113,6 @@ type CloudConfig struct {
 // ShellConfig defines ambient context, execution, and output settings.
 type ShellConfig struct {
 	OutputMode        string `yaml:"output_mode,omitempty"`
-	DefaultSession    string `yaml:"default_session,omitempty"`
 	InputPromptPrefix string `yaml:"input_prompt_prefix,omitempty"`
 	CaptureHistory    bool   `yaml:"capture_history"`
 	MaxHistoryLines   int    `yaml:"max_history_lines,omitempty"`
@@ -155,10 +153,9 @@ func NewDefaultConfig() *Config {
 		},
 		Shell: ShellConfig{
 			OutputMode:        DefaultOutputMode,
-			DefaultSession:    DefaultSessionMode,
 			InputPromptPrefix: DefaultInputPromptPrefix,
 			CaptureHistory:    true,
-			MaxHistoryLines:   5,
+			MaxHistoryLines:   10,
 		},
 	}
 }
@@ -299,9 +296,6 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if env := os.Getenv("ROBO_OUTPUT_MODE"); env != "" {
 		c.Shell.OutputMode = env
-	}
-	if env := os.Getenv("ROBO_DEFAULT_SESSION"); env != "" {
-		c.Shell.DefaultSession = env
 	}
 	if env := os.Getenv("ROBO_INPUT_PROMPT_PREFIX"); env != "" {
 		c.Shell.InputPromptPrefix = env

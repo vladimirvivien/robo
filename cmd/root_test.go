@@ -24,6 +24,19 @@ func TestRootCmd_Help(t *testing.T) {
 	}
 }
 
+func TestRootCmd_Flags(t *testing.T) {
+	flags := []string{"auto-accept", "yolo-approve-all", "local-only", "cloud-only", "output", "config"}
+	for _, f := range flags {
+		flag := cmd.RootCmd.Flags().Lookup(f)
+		if flag == nil {
+			flag = cmd.RootCmd.PersistentFlags().Lookup(f)
+		}
+		if flag == nil {
+			t.Errorf("expected flag --%s on RootCmd", f)
+		}
+	}
+}
+
 func TestDaemonCmd_Registration(t *testing.T) {
 	foundDaemon := false
 	for _, c := range cmd.RootCmd.Commands() {

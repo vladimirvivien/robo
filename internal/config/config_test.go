@@ -26,8 +26,8 @@ func TestConfig_Defaults(t *testing.T) {
 	if cfg.Shell.OutputMode != "markdown" {
 		t.Errorf("expected output_mode 'markdown', got %q", cfg.Shell.OutputMode)
 	}
-	if cfg.Shell.DefaultSession != "daily" {
-		t.Errorf("expected default_session 'daily', got %q", cfg.Shell.DefaultSession)
+	if cfg.Shell.MaxHistoryLines != 10 {
+		t.Errorf("expected max_history_lines 10, got %d", cfg.Shell.MaxHistoryLines)
 	}
 	if cfg.Robod.IdleTTL != 15*time.Minute {
 		t.Errorf("expected IdleTTL 15m, got %v", cfg.Robod.IdleTTL)
@@ -49,7 +49,7 @@ func TestConfig_SaveAndLoad(t *testing.T) {
 	cfg.LLM.Cloud.BaseURL = "https://custom.api.com"
 	cfg.Robod.URL = "http://remote-server:9000"
 	cfg.Shell.OutputMode = "json"
-	cfg.Shell.DefaultSession = "project-x"
+	cfg.Shell.MaxHistoryLines = 15
 
 	if err := cfg.Save(path); err != nil {
 		t.Fatalf("Save failed: %v", err)
@@ -78,8 +78,8 @@ func TestConfig_SaveAndLoad(t *testing.T) {
 	if loaded.Shell.OutputMode != "json" {
 		t.Errorf("expected output_mode 'json', got %q", loaded.Shell.OutputMode)
 	}
-	if loaded.Shell.DefaultSession != "project-x" {
-		t.Errorf("expected default_session 'project-x', got %q", loaded.Shell.DefaultSession)
+	if loaded.Shell.MaxHistoryLines != 15 {
+		t.Errorf("expected max_history_lines 15, got %d", loaded.Shell.MaxHistoryLines)
 	}
 }
 
@@ -92,7 +92,6 @@ func TestConfig_EnvOverrides(t *testing.T) {
 	t.Setenv("ROBO_ROBOD_URL", "http://env-robod:8888")
 	t.Setenv("ROBO_ROBOD_TOKEN", "token-env-999")
 	t.Setenv("ROBO_OUTPUT_MODE", "code")
-	t.Setenv("ROBO_DEFAULT_SESSION", "my-session")
 	t.Setenv("ROBO_INPUT_PROMPT_PREFIX", "custom-prompt>")
 	t.Setenv("ROBO_AUTO_ACCEPT", "true")
 	t.Setenv("ROBO_YOLO_APPROVE_ALL", "1")
@@ -129,9 +128,6 @@ func TestConfig_EnvOverrides(t *testing.T) {
 	}
 	if cfg.Shell.OutputMode != "code" {
 		t.Errorf("expected Shell.OutputMode 'code', got %q", cfg.Shell.OutputMode)
-	}
-	if cfg.Shell.DefaultSession != "my-session" {
-		t.Errorf("expected Shell.DefaultSession 'my-session', got %q", cfg.Shell.DefaultSession)
 	}
 	if cfg.Shell.InputPromptPrefix != "custom-prompt>" {
 		t.Errorf("expected Shell.InputPromptPrefix 'custom-prompt>', got %q", cfg.Shell.InputPromptPrefix)

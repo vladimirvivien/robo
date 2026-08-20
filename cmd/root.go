@@ -34,10 +34,10 @@ var (
 
 // RootCmd represents the base command when called without subcommands.
 var RootCmd = &cobra.Command{
-	Use:   "robo [prompt]",
-	Short: "robo: AI-native developer companion and terminal assistant",
-	Long: `robo is a two-tier AI assistant with sub-50ms hot-start on-device execution
-powered by LiteRT-LM (robod) and intelligent automatic escalation to frontier cloud models.`,
+	Use:   "robo [intent]",
+	Short: "robo: on-device AI terminal companion and shell assistant",
+	Long: `robo translates natural-language intents into executable shell commands,
+inspects terminal diagnostics, and executes actions with safety guardrails.`,
 	Args:          cobra.ArbitraryArgs,
 	SilenceUsage:  true,
 	SilenceErrors: true,
@@ -82,6 +82,14 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Apply CLI flags to config overrides
+	if flagAutoAccept {
+		cfg.Shell.AutoAccept = true
+	}
+	if flagYoloApproveAll {
+		cfg.Shell.YoloApproveAll = true
+	}
+
 	// 2. Read prompt and stdin
 	var prompt string
 	var stdinContent string
@@ -97,9 +105,6 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	}
 
 	if prompt == "" {
-		if ui.IsStdoutTerminal() && ui.IsStdinTerminal() {
-			return runChat(cmd, args)
-		}
 		return cmd.Help()
 	}
 
@@ -113,7 +118,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// 4. Start visual spinner immediately upon one-shot prompt receipt
+	// 4. Start visual spinner immediately upon prompt receipt
 	isInteractive := ui.IsStdoutTerminal() && (outputFormat == "markdown" || outputFormat == "md" || outputFormat == "")
 	var sp *ui.Spinner
 	if isInteractive {
@@ -125,7 +130,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	// 4. Validate inference environment setup
+	// 5. Validate inference environment setup
 	forceBackend := ""
 	if flagLocal {
 		forceBackend = "local-only"
@@ -144,7 +149,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// 5. Assemble ambient shell context (pure in-memory / local files)
+	// 6. Assemble ambient shell context (OS, Architecture, active shell, and recent shell history)
 	var systemPrompt strings.Builder
 	systemPrompt.WriteString(config.DefaultRoboSystemPrompt)
 	systemPrompt.WriteString("\n\n")
@@ -162,7 +167,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		collector := shell.NewCollector(nil)
 		maxLines := cfg.Shell.MaxHistoryLines
 		if maxLines <= 0 {
-			maxLines = 5
+			maxLines = 10
 		}
 		sc, err := collector.Collect(ctx, maxLines)
 		if err == nil && sc != nil {
@@ -171,7 +176,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 6. Construct engines
+	// 7. Construct engines
 	inProcEngine := local.New(cfg.LLM.Local, cfg)
 	localClient := daemon.NewClient(*cfg, daemon.WithInProcEngine(inProcEngine))
 	cloudEngine := cloud.New(cfg.LLM.Cloud, cfg)
@@ -179,7 +184,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	r := router.NewRouter(localClient, cloudEngine, cfg.LLM)
 	defer func() { _ = r.Close() }()
 
-	// 7. Build request
+	// 8. Build request
 	req := engine.Request{
 		Prompt:       prompt,
 		SystemPrompt: systemPrompt.String(),
@@ -198,7 +203,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		req.ForceBackend = "cloud-only"
 	}
 
-	// 8. Execute generation
+	// 9. Execute generation
 	var fullText strings.Builder
 
 	stream, err := r.GenerateStream(ctx, req)
@@ -255,5 +260,19 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		Local:       usedLocal,
 	}
 
-	return formatter.Format(os.Stdout, outputData)
+	// Render output
+	if err := formatter.Format(os.Stdout, outputData); err != nil {
+		return err
+	}
+
+	// In interactive mode, if a command was synthesized but not yet executed, prompt review
+	if isInteractive && cmdStr != "" {
+		toolHandler := shell.NewToolHandler(cfg)
+		_, _ = toolHandler.Handle(ctx, shell.ShellInput{
+			Command:     cmdStr,
+			Description: explanation,
+		})
+	}
+
+	return nil
 }
