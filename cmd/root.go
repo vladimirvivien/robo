@@ -241,16 +241,17 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	rawResponse := fullText.String()
 	cleaned := ui.CleanResponseText(rawResponse)
 	cmdStr := ""
-	explanation := strings.TrimSpace(shell.StripCodeBlock(cleaned))
+	explanation := ""
 
 	// Structured tool calls take precedence over heuristic markdown code blocks
 	if len(proposedToolCalls) > 0 {
 		cmdStr = proposedToolCalls[0].Command
-		if proposedToolCalls[0].Description != "" && (explanation == "" || explanation == cleaned) {
-			explanation = proposedToolCalls[0].Description
-		}
+		explanation = proposedToolCalls[0].Description
 	} else {
 		cmdStr = shell.ExtractProposedCommand(cleaned)
+		if cmdStr == "" {
+			explanation = cleaned
+		}
 	}
 
 	usedLocal := flagLocal || (!flagCloud && cfg.LLM.Local.Enabled)

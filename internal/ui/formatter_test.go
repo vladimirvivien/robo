@@ -11,8 +11,8 @@ import (
 
 func TestFormatters(t *testing.T) {
 	data := ui.OutputData{
-		Response:    "\x1b[32mHere is the command:\x1b[0m\n```powershell\nGet-Date\n```",
-		Explanation: "\x1b[32mHere is the command:\x1b[0m",
+		Response:    "\x1b[32mHere is the explanation\x1b[0m",
+		Explanation: "\x1b[32mHere is the explanation\x1b[0m",
 		Command:     "Get-Date",
 		Provider:    "litertlm",
 		Model:       "gemma-4-E2B-it",
@@ -62,7 +62,7 @@ func TestFormatters(t *testing.T) {
 		if strings.Contains(out, "\x1b") {
 			t.Errorf("plain output contains ANSI escape sequences: %s", out)
 		}
-		if !strings.Contains(out, "Get-Date") || !strings.Contains(out, "Here is the command:") {
+		if !strings.Contains(out, "Get-Date") {
 			t.Errorf("unexpected plain output: %s", out)
 		}
 	})
@@ -85,18 +85,21 @@ func TestFormatters(t *testing.T) {
 		}
 	})
 
-	t.Run("MarkdownFormatter", func(t *testing.T) {
+	t.Run("MarkdownFormatter_ConversationalCard", func(t *testing.T) {
+		noCmdData := ui.OutputData{
+			Response: "This is a direct conversational answer.",
+		}
 		f, err := ui.NewFormatter("markdown", true, 80)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		var buf bytes.Buffer
-		if err := f.Format(&buf, data); err != nil {
+		if err := f.Format(&buf, noCmdData); err != nil {
 			t.Fatalf("format error: %v", err)
 		}
 		out := buf.String()
-		if !strings.Contains(out, "Here is the command:") {
-			t.Errorf("expected explanation in card, got %s", out)
+		if !strings.Contains(out, "This is a direct conversational answer.") {
+			t.Errorf("expected conversational response in card, got %s", out)
 		}
 	})
 

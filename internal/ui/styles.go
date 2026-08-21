@@ -158,7 +158,7 @@ func CommandCardWithWidth(title, command string, width int) string {
 
 	var sb strings.Builder
 	if title == "" {
-		title = "Proposed Shell Command"
+		title = "🤖 Proposed Shell Command"
 	}
 	sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(colorDolly).Render(title))
 	sb.WriteString("\n\n  ")

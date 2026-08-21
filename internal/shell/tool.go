@@ -72,9 +72,10 @@ func (h *ToolHandler) Handle(ctx context.Context, in ShellInput) (ShellOutput, e
 
 	// Interactive mode: display proposed command card
 	fmt.Println()
-	title := "Proposed Shell Command"
-	if in.Description != "" {
-		title = fmt.Sprintf("Proposed: %s", in.Description)
+	title := "🤖 Proposed Shell Command"
+	desc := strings.TrimSpace(in.Description)
+	if desc != "" && !strings.Contains(desc, "\n") && len(desc) < 80 {
+		title = fmt.Sprintf("🤖 Proposed: %s", desc)
 	}
 	fmt.Println(ui.CommandCard(title, cmdStr))
 

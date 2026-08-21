@@ -43,6 +43,7 @@ func (f *MarkdownFormatter) Format(w io.Writer, data OutputData) error {
 	cardWidth := CappedWidth(f.Width)
 	renderWidth := max(cardWidth-6, 30)
 
+	// If no command was proposed (e.g. conversational answer, tutorial, explanation), render the card
 	if data.Command == "" {
 		trimmed := strings.TrimSpace(data.Response)
 		if trimmed == "" || trimmed == "Command executed successfully." {
@@ -58,18 +59,7 @@ func (f *MarkdownFormatter) Format(w io.Writer, data OutputData) error {
 		return err
 	}
 
-	// If command is present, render explanation in card if non-empty
-	if strings.TrimSpace(data.Explanation) != "" {
-		rendered, _ := RenderMarkdown(strings.TrimSpace(data.Explanation), renderWidth)
-		renderedTrimmed := strings.TrimSpace(rendered)
-		if renderedTrimmed != "" {
-			card := CardWithWidth("", renderedTrimmed, "", cardWidth)
-			if _, err := fmt.Fprintln(w, card); err != nil {
-				return err
-			}
-		}
-	}
-
+	// If a command was proposed, toolHandler will display the CommandCard and review actions.
 	return nil
 }
 
