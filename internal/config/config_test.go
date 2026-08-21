@@ -32,8 +32,8 @@ func TestConfig_Defaults(t *testing.T) {
 	if cfg.Robod.IdleTTL != 15*time.Minute {
 		t.Errorf("expected IdleTTL 15m, got %v", cfg.Robod.IdleTTL)
 	}
-	if cfg.Robod.URL != "http://127.0.0.1:8765" {
-		t.Errorf("expected URL http://127.0.0.1:8765, got %s", cfg.Robod.URL)
+	if !cfg.Robod.Enabled {
+		t.Errorf("expected Robod.Enabled true, got %v", cfg.Robod.Enabled)
 	}
 }
 
@@ -47,7 +47,7 @@ func TestConfig_SaveAndLoad(t *testing.T) {
 	cfg.LLM.Local.Backend = "cpu"
 	cfg.LLM.Local.Version = "v0.17.0"
 	cfg.LLM.Cloud.BaseURL = "https://custom.api.com"
-	cfg.Robod.URL = "http://remote-server:9000"
+	cfg.Robod.Enabled = false
 	cfg.Shell.OutputMode = "json"
 	cfg.Shell.MaxHistoryLines = 15
 
@@ -72,8 +72,8 @@ func TestConfig_SaveAndLoad(t *testing.T) {
 	if loaded.LLM.Cloud.BaseURL != "https://custom.api.com" {
 		t.Errorf("expected 'https://custom.api.com', got %q", loaded.LLM.Cloud.BaseURL)
 	}
-	if loaded.Robod.URL != "http://remote-server:9000" {
-		t.Errorf("expected URL 'http://remote-server:9000', got %s", loaded.Robod.URL)
+	if loaded.Robod.Enabled != false {
+		t.Errorf("expected Robod.Enabled false, got %v", loaded.Robod.Enabled)
 	}
 	if loaded.Shell.OutputMode != "json" {
 		t.Errorf("expected output_mode 'json', got %q", loaded.Shell.OutputMode)
@@ -89,8 +89,7 @@ func TestConfig_EnvOverrides(t *testing.T) {
 	t.Setenv("ROBO_LOCAL_BACKEND", "cpu")
 	t.Setenv("ROBO_LOCAL_VERSION", "v0.18.0")
 	t.Setenv("ROBO_CLOUD_BASE_URL", "https://env.api.com")
-	t.Setenv("ROBO_ROBOD_URL", "http://env-robod:8888")
-	t.Setenv("ROBO_ROBOD_TOKEN", "token-env-999")
+	t.Setenv("ROBO_ROBOD_ENABLED", "false")
 	t.Setenv("ROBO_OUTPUT_MODE", "code")
 	t.Setenv("ROBO_INPUT_PROMPT_PREFIX", "custom-prompt>")
 	t.Setenv("ROBO_AUTO_ACCEPT", "true")
@@ -117,11 +116,8 @@ func TestConfig_EnvOverrides(t *testing.T) {
 	if cfg.LLM.Cloud.BaseURL != "https://env.api.com" {
 		t.Errorf("expected env override 'https://env.api.com', got %q", cfg.LLM.Cloud.BaseURL)
 	}
-	if cfg.Robod.URL != "http://env-robod:8888" {
-		t.Errorf("expected env override 'http://env-robod:8888', got %q", cfg.Robod.URL)
-	}
-	if cfg.Robod.AuthToken != "token-env-999" {
-		t.Errorf("expected env override 'token-env-999', got %q", cfg.Robod.AuthToken)
+	if cfg.Robod.Enabled != false {
+		t.Errorf("expected env override Robod.Enabled false, got %v", cfg.Robod.Enabled)
 	}
 	if cfg.LLM.Cloud.APIKey != "test-key-123" {
 		t.Errorf("expected APIKey 'test-key-123', got %q", cfg.LLM.Cloud.APIKey)

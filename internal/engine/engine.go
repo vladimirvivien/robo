@@ -28,21 +28,33 @@ type ImageContext struct {
 	Data     []byte `json:"data"`
 }
 
-// Response represents a completed model generation.
-type Response struct {
-	Text       string `json:"text"`
-	Provider   string `json:"provider"`
-	Model      string `json:"model"`
-	UsedLocal  bool   `json:"used_local"`
-	TokensUsed int    `json:"tokens_used,omitempty"`
+// ToolCall represents a structured action proposed by the language model.
+type ToolCall struct {
+	Name          string `json:"name"`
+	Command       string `json:"command"`
+	Description   string `json:"description,omitempty"`
+	Risk          string `json:"risk,omitempty"` // "safe", "destructive"
+	Warning       string `json:"warning,omitempty"`
+	IsDestructive bool   `json:"is_destructive,omitempty"`
 }
 
-// StreamChunk represents an incremental token emitted during streaming.
+// Response represents a completed model generation.
+type Response struct {
+	Text       string     `json:"text"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	Provider   string     `json:"provider"`
+	Model      string     `json:"model"`
+	UsedLocal  bool       `json:"used_local"`
+	TokensUsed int        `json:"tokens_used,omitempty"`
+}
+
+// StreamChunk represents an incremental token or event emitted during streaming.
 type StreamChunk struct {
-	Text       string `json:"text,omitempty"`
-	Final      bool   `json:"final,omitempty"`
-	TokensUsed int    `json:"tokens_used,omitempty"`
-	Error      error  `json:"error,omitempty"`
+	Text       string     `json:"text,omitempty"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	Final      bool       `json:"final,omitempty"`
+	TokensUsed int        `json:"tokens_used,omitempty"`
+	Error      error      `json:"error,omitempty"`
 }
 
 // Engine is the core interface implemented by local, cloud, daemon, and router engines.

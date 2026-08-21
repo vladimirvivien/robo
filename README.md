@@ -47,10 +47,10 @@ robo init
 robo init -y
 ```
 
-This creates `~/.config/robo/config.yaml` and downloads the selected model weights to your local cache.
+This creates `~/.robo/config.yaml` and downloads the selected model weights to your local cache.
 
 #### Customizing Cloud Models
-You can configure a cloud model by editing `~/.config/robo/config.yaml`:
+You can configure a cloud model by editing `~/.robo/config.yaml`:
 
 ```yaml
 llm:

@@ -2,7 +2,6 @@ package daemon_test
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"path/filepath"
@@ -14,16 +13,14 @@ import (
 	"github.com/vladimirvivien/robo/internal/engine"
 )
 
-func TestServer_HealthAuthGenerateStream(t *testing.T) {
+func TestServer_HealthGenerateStream(t *testing.T) {
 	mock := engine.NewMockEngine("local-mock")
 
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "daemon.json")
 
-	token := "test-secret-token-123"
 	server, err := daemon.NewServer(mock, daemon.ServerOptions{
 		URL:       "http://127.0.0.1:0", // dynamic port
-		AuthToken: token,
 		ModelName: "test-gemma",
 		StatePath: statePath,
 		IdleTTL:   10 * time.Minute,
@@ -47,7 +44,7 @@ func TestServer_HealthAuthGenerateStream(t *testing.T) {
 		t.Fatal("expected non-empty server URL")
 	}
 
-	// 1. Test GET /health (unauthenticated)
+	// 1. Test GET /health
 	healthResp, err := http.Get(baseURL + "/health")
 	if err != nil {
 		t.Fatalf("GET /health failed: %v", err)
@@ -63,26 +60,9 @@ func TestServer_HealthAuthGenerateStream(t *testing.T) {
 		t.Errorf("health model: expected test-gemma, got %s", health.Model)
 	}
 
-	// 2. Test POST /v1/generate without token (expect 401)
+	// 2. Test POST /v1/generate
 	reqBody := `{"prompt":"ping"}`
-	unauthResp, err := http.Post(baseURL+"/v1/generate", "application/json", strings.NewReader(reqBody))
-	if err != nil {
-		t.Fatalf("POST unauth failed: %v", err)
-	}
-	_ = unauthResp.Body.Close()
-	if unauthResp.StatusCode != http.StatusUnauthorized {
-		t.Errorf("expected 401 unauthorized, got %d", unauthResp.StatusCode)
-	}
-
-	// 3. Test POST /v1/generate with valid token
-	req, err := http.NewRequestWithContext(ctx, "POST", baseURL+"/v1/generate", strings.NewReader(reqBody))
-	if err != nil {
-		t.Fatalf("new request failed: %v", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-
-	genResp, err := http.DefaultClient.Do(req)
+	genResp, err := http.Post(baseURL+"/v1/generate", "application/json", strings.NewReader(reqBody))
 	if err != nil {
 		t.Fatalf("POST /v1/generate failed: %v", err)
 	}
@@ -97,12 +77,11 @@ func TestServer_HealthAuthGenerateStream(t *testing.T) {
 		t.Errorf("unexpected response text: %s", res.Text)
 	}
 
-	// 4. Test POST /v1/generate/stream (SSE)
+	// 3. Test POST /v1/generate/stream (SSE)
 	streamReq, err := http.NewRequestWithContext(ctx, "POST", baseURL+"/v1/generate/stream", strings.NewReader(`{"prompt":"streaming test message"}`))
 	if err != nil {
 		t.Fatalf("new stream req: %v", err)
 	}
-	streamReq.Header.Set("Authorization", "Bearer "+token)
 	streamReq.Header.Set("Content-Type", "application/json")
 
 	streamResp, err := http.DefaultClient.Do(streamReq)
@@ -135,49 +114,4 @@ func TestServer_HealthAuthGenerateStream(t *testing.T) {
 
 	// Clean shutdown
 	_ = server.Shutdown(ctx)
-}
-
-func TestServer_RequireAuthMiddleware(t *testing.T) {
-	token := "secure-token"
-	handler := daemon.RequireAuth(token, func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-
-	// Test missing header
-	req, _ := http.NewRequest("GET", "/", nil)
-	w := &stubResponseWriter{header: make(http.Header)}
-	handler(w, req)
-	if w.statusCode != http.StatusUnauthorized {
-		t.Errorf("expected 401 on missing auth, got %d", w.statusCode)
-	}
-
-	// Test valid header
-	req.Header.Set("Authorization", "Bearer "+token)
-	w = &stubResponseWriter{header: make(http.Header)}
-	handler(w, req)
-	if w.statusCode != http.StatusOK {
-		t.Errorf("expected 200 on valid auth, got %d", w.statusCode)
-	}
-}
-
-type stubResponseWriter struct {
-	header     http.Header
-	statusCode int
-	buf        bytes.Buffer
-}
-
-func (s *stubResponseWriter) Header() http.Header {
-	return s.header
-}
-
-func (s *stubResponseWriter) Write(b []byte) (int, error) {
-	if s.statusCode == 0 {
-		s.statusCode = http.StatusOK
-	}
-	return s.buf.Write(b)
-}
-
-func (s *stubResponseWriter) WriteHeader(statusCode int) {
-	s.statusCode = statusCode
 }

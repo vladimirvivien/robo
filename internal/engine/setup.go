@@ -85,7 +85,7 @@ func CheckLocalSetup(cfg config.LocalConfig) LocalSetupStatus {
 		status.HasLib = true
 	}
 
-	if IsModelDownloaded(status.ModelPath) {
+	if FindLocalModelPath(status.ModelPath, cfg.CacheDir) != "" {
 		status.HasModel = true
 	}
 
@@ -114,7 +114,7 @@ func FindLocalModelPath(modelIDOrPath string, customCacheDir string) string {
 	if modelIDOrPath == "" {
 		return ""
 	}
-	if fileExists(modelIDOrPath) {
+	if fileExists(modelIDOrPath) && !isDirectory(modelIDOrPath) {
 		return modelIDOrPath
 	}
 
@@ -131,16 +131,13 @@ func FindLocalModelPath(modelIDOrPath string, customCacheDir string) string {
 	if customCacheDir != "" {
 		searchDirs = append(searchDirs, customCacheDir)
 	}
-	if cacheDir, err := modelfetch.DefaultCacheDir(); err == nil {
-		searchDirs = append(searchDirs, cacheDir)
-	}
 	if home, err := os.UserHomeDir(); err == nil {
 		searchDirs = append(searchDirs,
-			filepath.Join(home, ".litertlm", "models"),
-			filepath.Join(home, "models"),
-			filepath.Join(home, ".cache", "litertlm-go", "models"),
-			filepath.Join(home, ".config", "robo", "cache"),
+			filepath.Join(home, ".robo", "cache"),
 		)
+	}
+	if cacheDir, err := modelfetch.DefaultCacheDir(); err == nil {
+		searchDirs = append(searchDirs, cacheDir)
 	}
 
 	// Search prioritized candidate filenames across directories
@@ -149,8 +146,14 @@ func FindLocalModelPath(modelIDOrPath string, customCacheDir string) string {
 			continue
 		}
 		for _, dir := range searchDirs {
+			// 1. Check namespaced folder: <dir>/<name>/<name>
+			namespaced := filepath.Join(dir, name, name)
+			if fileExists(namespaced) && !isDirectory(namespaced) {
+				return namespaced
+			}
+			// 2. Check direct file: <dir>/<name>
 			full := filepath.Join(dir, name)
-			if fileExists(full) {
+			if fileExists(full) && !isDirectory(full) {
 				return full
 			}
 		}
@@ -218,14 +221,33 @@ func EnsureLocalSetupWithProgress(ctx context.Context, cfg config.LocalConfig) (
 
 		cacheDir := cfg.CacheDir
 		if cacheDir == "" {
-			cacheDir, _ = modelfetch.DefaultCacheDir()
+			if home, err := os.UserHomeDir(); err == nil {
+				cacheDir = filepath.Join(home, ".robo", "cache")
+			} else {
+				cacheDir, _ = modelfetch.DefaultCacheDir()
+			}
 		}
-		destPath := filepath.Join(cacheDir, targetFilename)
 
-		if !fileExists(destPath) {
+		// Namespaced model folder: ~/.robo/cache/gemma-4-2B-it.litertlm/
+		modelFolder := filepath.Join(cacheDir, targetFilename)
+		destPath := filepath.Join(modelFolder, targetFilename)
+		directPath := filepath.Join(cacheDir, targetFilename)
+
+		if fileExists(destPath) && !isDirectory(destPath) {
+			modelPath = destPath
+		} else if fileExists(directPath) && !isDirectory(directPath) {
+			modelPath = directPath
+		} else {
+			if err := os.MkdirAll(modelFolder, 0750); err != nil {
+				return "", "", fmt.Errorf("local: create model cache dir: %w", err)
+			}
 			var pb *ui.ProgressBar
 			var opts []modelfetch.Option
-			opts = append(opts, modelfetch.WithDir(cacheDir))
+			opts = append(opts,
+				modelfetch.WithDir(modelFolder),
+				modelfetch.WithFilename(targetFilename),
+				modelfetch.WithSkipIfExists(false),
+			)
 
 			if ui.IsStdoutTerminal() {
 				pb = ui.NewProgressBar(fmt.Sprintf("Downloading %s", targetFilename))
@@ -242,8 +264,6 @@ func EnsureLocalSetupWithProgress(ctx context.Context, cfg config.LocalConfig) (
 				return "", "", fmt.Errorf("local: fetch model %q: %w", modelPath, err)
 			}
 			modelPath = cachedPath
-		} else {
-			modelPath = destPath
 		}
 	}
 
@@ -304,4 +324,12 @@ func fileExists(path string) bool {
 	}
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func isDirectory(path string) bool {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return fi.IsDir()
 }

@@ -14,20 +14,22 @@ type GenerateRequest struct {
 
 // GenerateResponse is the JSON payload returned by /v1/generate.
 type GenerateResponse struct {
-	Text       string `json:"text"`
-	Provider   string `json:"provider"`
-	Model      string `json:"model"`
-	UsedLocal  bool   `json:"used_local"`
-	TokensUsed int    `json:"tokens_used,omitempty"`
-	Error      string `json:"error,omitempty"`
+	Text       string            `json:"text"`
+	ToolCalls  []engine.ToolCall `json:"tool_calls,omitempty"`
+	Provider   string            `json:"provider"`
+	Model      string            `json:"model"`
+	UsedLocal  bool              `json:"used_local"`
+	TokensUsed int               `json:"tokens_used,omitempty"`
+	Error      string            `json:"error,omitempty"`
 }
 
 // StreamChunkPayload is the JSON payload serialized into SSE data: lines.
 type StreamChunkPayload struct {
-	Text       string `json:"text,omitempty"`
-	Final      bool   `json:"final,omitempty"`
-	TokensUsed int    `json:"tokens_used,omitempty"`
-	Error      string `json:"error,omitempty"`
+	Text       string            `json:"text,omitempty"`
+	ToolCalls  []engine.ToolCall `json:"tool_calls,omitempty"`
+	Final      bool              `json:"final,omitempty"`
+	TokensUsed int               `json:"tokens_used,omitempty"`
+	Error      string            `json:"error,omitempty"`
 }
 
 // HealthResponse is returned by GET /health.

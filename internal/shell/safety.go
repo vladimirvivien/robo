@@ -45,6 +45,29 @@ var destructiveRules = []destructiveRule{
 	},
 }
 
+// SafetyAssessment represents the risk level of a shell command.
+type SafetyAssessment struct {
+	Level         string `json:"level"` // "safe", "destructive"
+	Warning       string `json:"warning,omitempty"`
+	IsDestructive bool   `json:"is_destructive"`
+}
+
+// AssessSafety evaluates the risk level of a shell command.
+func AssessSafety(cmd string) SafetyAssessment {
+	isDestructive, warning := IsDestructiveCommand(cmd)
+	if isDestructive {
+		return SafetyAssessment{
+			Level:         "destructive",
+			Warning:       warning,
+			IsDestructive: true,
+		}
+	}
+	return SafetyAssessment{
+		Level:         "safe",
+		IsDestructive: false,
+	}
+}
+
 // IsDestructiveCommand checks if a shell command string contains high-risk or destructive patterns.
 func IsDestructiveCommand(cmd string) (bool, string) {
 	trimmed := strings.TrimSpace(cmd)

@@ -127,8 +127,6 @@ func PromptInitSelection(modelChoices ...ModelChoice) (InitPreferences, error) {
 		Title("Select LiteRT-LM runtime library version:").
 		Options(
 			huh.NewOption("v0.16.0 • Recommended (Default)", "v0.16.0"),
-			huh.NewOption("v0.15.0", "v0.15.0"),
-			huh.NewOption("v0.14.0", "v0.14.0"),
 		).
 		Value(&prefs.Version)
 

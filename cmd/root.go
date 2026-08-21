@@ -61,7 +61,7 @@ func init() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	log.SetOutput(io.Discard)
 
-	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ~/.config/robo/config.yaml)")
+	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ~/.robo/config.yaml)")
 	RootCmd.PersistentFlags().StringVarP(&flagOutput, "output", "o", "markdown", "output format (markdown, plain, json, code)")
 	RootCmd.Flags().BoolVarP(&flagLocal, "local-only", "l", false, "force execution on local on-device SLM")
 	RootCmd.Flags().BoolVarP(&flagCloud, "cloud-only", "c", false, "force execution on cloud frontier model")
@@ -267,6 +267,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 
 	// 8. Execute generation
 	var fullText strings.Builder
+	var proposedToolCalls []engine.ToolCall
 
 	stream, err := r.GenerateStream(ctx, req)
 	if err != nil {
@@ -285,6 +286,9 @@ func runRoot(cmd *cobra.Command, args []string) error {
 			return chunk.Error
 		}
 		fullText.WriteString(chunk.Text)
+		if len(chunk.ToolCalls) > 0 {
+			proposedToolCalls = append(proposedToolCalls, chunk.ToolCalls...)
+		}
 	}
 	if sp != nil {
 		sp.Stop()
@@ -292,8 +296,18 @@ func runRoot(cmd *cobra.Command, args []string) error {
 
 	rawResponse := fullText.String()
 	cleaned := ui.CleanResponseText(rawResponse)
-	cmdStr := shell.ExtractProposedCommand(cleaned)
+	cmdStr := ""
 	explanation := strings.TrimSpace(shell.StripCodeBlock(cleaned))
+
+	// Structured tool calls take precedence over heuristic markdown code blocks
+	if len(proposedToolCalls) > 0 {
+		cmdStr = proposedToolCalls[0].Command
+		if proposedToolCalls[0].Description != "" && (explanation == "" || explanation == cleaned) {
+			explanation = proposedToolCalls[0].Description
+		}
+	} else {
+		cmdStr = shell.ExtractProposedCommand(cleaned)
+	}
 
 	usedLocal := flagLocal || (!flagCloud && cfg.LLM.Local.Enabled)
 	providerName := cfg.LLM.Local.Provider
@@ -323,7 +337,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// In interactive mode, if a command was synthesized in response text but not yet executed via tool, prompt review
+	// In interactive mode, if a command was proposed, orchestrator executes interactive review
 	if isInteractive && cmdStr != "" {
 		toolHandler := shell.NewToolHandler(cfg)
 		_, _ = toolHandler.Handle(ctx, shell.ShellInput{

@@ -15,19 +15,18 @@ type State struct {
 	URL       string    `json:"url"`
 	Port      int       `json:"port"`
 	PID       int       `json:"pid"`
-	AuthToken string    `json:"auth_token"`
 	Model     string    `json:"model"`
 	StartedAt time.Time `json:"started_at"`
 	LastTouch time.Time `json:"last_touch"`
 }
 
-// StatePath returns the path to daemon.json in the user's config directory.
+// StatePath returns the path to robod.json in the user's ~/.robo directory.
 func StatePath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return StateFilename
 	}
-	return filepath.Join(home, ".config", "robo", StateFilename)
+	return filepath.Join(home, ".robo", StateFilename)
 }
 
 // SaveState writes the daemon state to disk at path (or default if path is empty).

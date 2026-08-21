@@ -12,9 +12,9 @@ import (
 
 // Default constants for configuration
 const (
-	DefaultConfigDir         = ".config/robo"
+	DefaultConfigDir         = ".robo"
 	DefaultConfigFile        = "config.yaml"
-	DefaultLocalModel        = "litert-community/gemma-4-E4B-it-litert-lm"
+	DefaultLocalModel        = "litert-community/gemma-4-E4B-it"
 	DefaultLocalVersion      = "v0.16.0"
 	DefaultCloudModel        = "googleai/gemini-2.5-flash"
 	DefaultCloudProvider     = "googleai"
@@ -84,19 +84,8 @@ type LocalConfig struct {
 
 // RobodConfig defines settings for the hot-start background robod daemon.
 type RobodConfig struct {
-	Enabled   bool          `yaml:"enabled"`
-	URL       string        `yaml:"url,omitempty"`
-	AuthToken string        `yaml:"auth_token,omitempty"`
-	IdleTTL   time.Duration `yaml:"idle_ttl,omitempty"`
-	TLS       *TLSConfig    `yaml:"tls,omitempty"`
-}
-
-// TLSConfig defines transport security parameters for robod HTTPS connections.
-type TLSConfig struct {
-	CertFile           string `yaml:"cert_file,omitempty"`
-	KeyFile            string `yaml:"key_file,omitempty"`
-	CAFile             string `yaml:"ca_file,omitempty"`
-	InsecureSkipVerify bool   `yaml:"insecure_skip_verify,omitempty"`
+	Enabled bool          `yaml:"enabled"`
+	IdleTTL time.Duration `yaml:"idle_ttl,omitempty"`
 }
 
 // CloudConfig defines settings for the Genkit cloud engine.
@@ -122,7 +111,7 @@ type ShellConfig struct {
 // NewDefaultConfig returns a Config struct initialized with standard defaults.
 func NewDefaultConfig() *Config {
 	home, _ := os.UserHomeDir()
-	configDir := filepath.Join(home, ".config", "robo")
+	configDir := filepath.Join(home, ".robo")
 
 	return &Config{
 		LLM: LLMConfig{
@@ -146,7 +135,6 @@ func NewDefaultConfig() *Config {
 		},
 		Robod: RobodConfig{
 			Enabled: true,
-			URL:     DefaultRobodURL,
 			IdleTTL: DefaultRobodIdleTTL,
 		},
 		Shell: ShellConfig{
@@ -158,13 +146,13 @@ func NewDefaultConfig() *Config {
 	}
 }
 
-// ConfigPath returns the standard path to config.yaml in the user's config dir.
+// ConfigPath returns the standard path to config.yaml in the user's ~/.robo directory.
 func ConfigPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return DefaultConfigFile
 	}
-	return filepath.Join(home, ".config", "robo", DefaultConfigFile)
+	return filepath.Join(home, ".robo", DefaultConfigFile)
 }
 
 // ConfigFileExists returns true if a config file is present on disk at path (or default path if empty).
@@ -261,36 +249,8 @@ func (c *Config) applyEnvOverrides() {
 	if env := os.Getenv("ROBO_CLOUD_BASE_URL"); env != "" {
 		c.LLM.Cloud.BaseURL = env
 	}
-	if env := os.Getenv("ROBO_ROBOD_URL"); env != "" {
-		c.Robod.URL = env
-	} else if env := os.Getenv("ROBO_DAEMON_URL"); env != "" {
-		c.Robod.URL = env
-	}
-	if env := os.Getenv("ROBO_ROBOD_TOKEN"); env != "" {
-		c.Robod.AuthToken = env
-	} else if env := os.Getenv("ROBO_DAEMON_TOKEN"); env != "" {
-		c.Robod.AuthToken = env
-	}
-	ensureTLS := func() {
-		if c.Robod.TLS == nil {
-			c.Robod.TLS = &TLSConfig{}
-		}
-	}
-	if env := os.Getenv("ROBO_ROBOD_TLS_CERT"); env != "" {
-		ensureTLS()
-		c.Robod.TLS.CertFile = env
-	}
-	if env := os.Getenv("ROBO_ROBOD_TLS_KEY"); env != "" {
-		ensureTLS()
-		c.Robod.TLS.KeyFile = env
-	}
-	if env := os.Getenv("ROBO_ROBOD_TLS_CA"); env != "" {
-		ensureTLS()
-		c.Robod.TLS.CAFile = env
-	}
-	if env := os.Getenv("ROBO_ROBOD_TLS_INSECURE"); env == "1" || strings.ToLower(env) == "true" {
-		ensureTLS()
-		c.Robod.TLS.InsecureSkipVerify = true
+	if env := os.Getenv("ROBO_ROBOD_ENABLED"); env != "" {
+		c.Robod.Enabled = env == "1" || strings.ToLower(env) == "true"
 	}
 	if env := os.Getenv("ROBO_OUTPUT_MODE"); env != "" {
 		c.Shell.OutputMode = env

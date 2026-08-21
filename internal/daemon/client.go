@@ -4,13 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -21,7 +18,7 @@ import (
 	"github.com/vladimirvivien/robo/internal/engine"
 )
 
-// Client coordinates sending requests to the background daemon with fallback.
+// Client coordinates sending requests to the local background daemon with fallback.
 type Client struct {
 	cfg            config.Config
 	statePath      string
@@ -64,32 +61,13 @@ func WithHTTPClient(client *http.Client) ClientOption {
 	}
 }
 
-// NewClient creates a new daemon Client with optional TLS support.
+// NewClient creates a new daemon Client for local IPC.
 func NewClient(cfg config.Config, opts ...ClientOption) *Client {
-	transport := &http.Transport{}
-	if cfg.Robod.TLS != nil {
-		tlsConfig := &tls.Config{
-			InsecureSkipVerify: cfg.Robod.TLS.InsecureSkipVerify, //nolint:gosec
-		}
-
-		if cfg.Robod.TLS.CAFile != "" {
-			caData, err := os.ReadFile(cfg.Robod.TLS.CAFile)
-			if err == nil {
-				pool := x509.NewCertPool()
-				if pool.AppendCertsFromPEM(caData) {
-					tlsConfig.RootCAs = pool
-				}
-			}
-		}
-		transport.TLSClientConfig = tlsConfig
-	}
-
 	c := &Client{
 		cfg:       cfg,
 		statePath: StatePath(),
 		httpClient: &http.Client{
-			Transport: transport,
-			Timeout:   120 * time.Second,
+			Timeout: 120 * time.Second,
 		},
 		inProcFallback: true,
 	}
@@ -110,14 +88,9 @@ func (c *Client) Name() string {
 	return "daemon-client"
 }
 
-type endpointTarget struct {
-	baseURL string
-	token   string
-}
-
 // EnsureDaemon ensures the background daemon is healthy, spawning it if necessary.
 func (c *Client) EnsureDaemon(ctx context.Context) (*State, error) {
-	target, err := c.resolveEndpoint(ctx)
+	baseURL, err := c.resolveEndpoint(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -125,53 +98,34 @@ func (c *Client) EnsureDaemon(ctx context.Context) (*State, error) {
 		return c.cachedState, nil
 	}
 	return &State{
-		URL:       target.baseURL,
-		AuthToken: target.token,
+		URL: baseURL,
 	}, nil
 }
 
-func (c *Client) resolveEndpoint(ctx context.Context) (*endpointTarget, error) {
+func (c *Client) resolveEndpoint(ctx context.Context) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	targetURL := c.cfg.Robod.URL
-	if targetURL == "" {
-		targetURL = config.DefaultRobodURL
-	}
-	baseURL := strings.TrimRight(targetURL, "/")
-	token := c.cfg.Robod.AuthToken
+	baseURL := config.DefaultRobodURL
 
-	// 1. If remote endpoint (not localhost), connect directly
-	if !isLocalEndpoint(baseURL) {
-		return &endpointTarget{
-			baseURL: baseURL,
-			token:   token,
-		}, nil
-	}
-
-	// 2. Check if local endpoint is already running
+	// 1. Check if local endpoint is already running
 	if c.pingURL(ctx, baseURL) == nil {
-		// Read token from state file if none configured
-		if token == "" {
+		if c.cachedState == nil {
 			if state, err := LoadState(c.statePath); err == nil {
-				token = state.AuthToken
 				c.cachedState = state
 			}
 		}
-		return &endpointTarget{
-			baseURL: baseURL,
-			token:   token,
-		}, nil
+		return baseURL, nil
 	}
 
-	// 3. If robod disabled, fail fast to in-process fallback
+	// 2. If robod disabled, fail fast to in-process fallback
 	if !c.cfg.Robod.Enabled {
-		return nil, errors.New("robod: daemon disabled")
+		return "", errors.New("robod: daemon disabled")
 	}
 
-	// 4. Try spawning local daemon
+	// 3. Try spawning local daemon
 	if err := c.launcher(); err != nil {
-		return nil, fmt.Errorf("robod: auto-spawn failed: %w", err)
+		return "", fmt.Errorf("robod: auto-spawn failed: %w", err)
 	}
 
 	// Poll for readiness up to 10 seconds (gives model weights and GPU time to initialize)
@@ -179,42 +133,24 @@ func (c *Client) resolveEndpoint(ctx context.Context) (*endpointTarget, error) {
 	for time.Now().Before(deadline) {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return "", ctx.Err()
 		case <-time.After(100 * time.Millisecond):
 		}
 
 		if c.pingURL(ctx, baseURL) == nil {
-			if token == "" {
-				if state, err := LoadState(c.statePath); err == nil {
-					token = state.AuthToken
-					c.cachedState = state
-				}
+			if state, err := LoadState(c.statePath); err == nil {
+				c.cachedState = state
 			}
-			return &endpointTarget{
-				baseURL: baseURL,
-				token:   token,
-			}, nil
+			return baseURL, nil
 		}
 	}
 
-	return nil, errors.New("daemon: timed out waiting for daemon readiness")
-}
-
-func isLocalEndpoint(raw string) bool {
-	if !strings.Contains(raw, "://") {
-		raw = "http://" + raw
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return false
-	}
-	host := u.Hostname()
-	return host == "" || host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "0.0.0.0"
+	return "", errors.New("daemon: timed out waiting for daemon readiness")
 }
 
 // Generate executes a synchronous completion against the daemon or in-proc fallback.
 func (c *Client) Generate(ctx context.Context, req engine.Request) (*engine.Response, error) {
-	target, err := c.resolveEndpoint(ctx)
+	baseURL, err := c.resolveEndpoint(ctx)
 	if err != nil {
 		if c.inProcEngine != nil && c.inProcFallback {
 			return c.inProcEngine.Generate(ctx, req)
@@ -236,16 +172,12 @@ func (c *Client) Generate(ctx context.Context, req engine.Request) (*engine.Resp
 		return nil, fmt.Errorf("daemon client: marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/v1/generate", target.baseURL)
+	url := fmt.Sprintf("%s/v1/generate", baseURL)
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("daemon client: new request: %w", err)
 	}
-
 	httpReq.Header.Set("Content-Type", "application/json")
-	if target.token != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+target.token)
-	}
 
 	httpResp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -272,6 +204,7 @@ func (c *Client) Generate(ctx context.Context, req engine.Request) (*engine.Resp
 
 	return &engine.Response{
 		Text:       genResp.Text,
+		ToolCalls:  genResp.ToolCalls,
 		Provider:   genResp.Provider,
 		Model:      genResp.Model,
 		UsedLocal:  genResp.UsedLocal,
@@ -281,7 +214,7 @@ func (c *Client) Generate(ctx context.Context, req engine.Request) (*engine.Resp
 
 // GenerateStream yields tokens over a channel from the daemon's SSE stream.
 func (c *Client) GenerateStream(ctx context.Context, req engine.Request) (<-chan engine.StreamChunk, error) {
-	target, err := c.resolveEndpoint(ctx)
+	baseURL, err := c.resolveEndpoint(ctx)
 	if err != nil {
 		if c.inProcEngine != nil && c.inProcFallback {
 			return c.inProcEngine.GenerateStream(ctx, req)
@@ -303,16 +236,12 @@ func (c *Client) GenerateStream(ctx context.Context, req engine.Request) (<-chan
 		return nil, fmt.Errorf("daemon client: marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/v1/generate/stream", target.baseURL)
+	url := fmt.Sprintf("%s/v1/generate/stream", baseURL)
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("daemon client: new request: %w", err)
 	}
-
 	httpReq.Header.Set("Content-Type", "application/json")
-	if target.token != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+target.token)
-	}
 
 	httpResp, err := c.httpClient.Do(httpReq)
 	if err != nil {
@@ -345,6 +274,7 @@ func (c *Client) GenerateStream(ctx context.Context, req engine.Request) (<-chan
 				if err := json.Unmarshal([]byte(data), &payload); err == nil {
 					chunk := engine.StreamChunk{
 						Text:       payload.Text,
+						ToolCalls:  payload.ToolCalls,
 						Final:      payload.Final,
 						TokensUsed: payload.TokensUsed,
 					}

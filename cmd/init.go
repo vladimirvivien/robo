@@ -23,7 +23,7 @@ var InitCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize robo, configure models, and download runtime dependencies",
 	Long: `Performs pre-flight checks, provisions Google LiteRT-LM runtime dependencies (v0.16.0),
-configures on-device Gemma 4 models, and generates ~/.config/robo/config.yaml.`,
+configures on-device Gemma 4 models, and generates ~/.robo/config.yaml.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE:          runInit,
@@ -128,12 +128,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// 4. Download LiteRT-LM shared libraries and selected Gemma model
-	libDir, modelPath, err := engine.EnsureLocalSetupWithProgress(ctx, cfg.LLM.Local)
+	_, _, err := engine.EnsureLocalSetupWithProgress(ctx, cfg.LLM.Local)
 	if err != nil {
 		return fmt.Errorf("setup dependencies: %w", err)
 	}
-	cfg.LLM.Local.LibDir = libDir
-	cfg.LLM.Local.Model = modelPath
 
 	// 5. Completion notice
 	if isInteractive {
@@ -141,7 +139,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		summary := fmt.Sprintf(
 			"• Config:   %s\n• Model:    %s\n• Runtime:  LiteRT-LM %s\n• Backend:  %s\n\nTry running:\n  robo \"explain how go mutexes work\"",
 			targetConfigPath,
-			cfg.LLM.Local.Model,
+			selectedModel,
 			cfg.LLM.Local.Version,
 			cfg.LLM.Local.Backend,
 		)

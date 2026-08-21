@@ -16,7 +16,6 @@ func TestState_SaveLoadRemove(t *testing.T) {
 		URL:       "http://127.0.0.1:8765",
 		Port:      8765,
 		PID:       12345,
-		AuthToken: "token-abc-123",
 		Model:     "test-model",
 		StartedAt: time.Now().Truncate(time.Second),
 		LastTouch: time.Now().Truncate(time.Second),
@@ -36,9 +35,6 @@ func TestState_SaveLoadRemove(t *testing.T) {
 	}
 	if loaded.Port != initial.Port {
 		t.Errorf("expected port %d, got %d", initial.Port, loaded.Port)
-	}
-	if loaded.AuthToken != initial.AuthToken {
-		t.Errorf("expected token %s, got %s", initial.AuthToken, loaded.AuthToken)
 	}
 	if loaded.PID != initial.PID {
 		t.Errorf("expected PID %d, got %d", initial.PID, loaded.PID)

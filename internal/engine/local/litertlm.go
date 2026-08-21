@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -12,6 +13,30 @@ import (
 	"github.com/vladimirvivien/robo/internal/engine"
 	"github.com/vladimirvivien/robo/internal/shell"
 )
+
+type toolCaptureCtxKey struct{}
+
+type toolRecorder struct {
+	mu    sync.Mutex
+	calls []engine.ToolCall
+}
+
+func (r *toolRecorder) add(tc engine.ToolCall) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, tc)
+}
+
+func (r *toolRecorder) get() []engine.ToolCall {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.calls) == 0 {
+		return nil
+	}
+	copied := make([]engine.ToolCall, len(r.calls))
+	copy(copied, r.calls)
+	return copied
+}
 
 // Engine implements engine.Engine using Google LiteRT-LM.
 type Engine struct {
@@ -62,11 +87,19 @@ func (e *Engine) Client(ctx context.Context) (*litertlm.Client, error) {
 	if e.cfg.Backend != "" {
 		opts = append(opts, litertlm.WithBackend(e.cfg.Backend))
 	}
-	if e.cfg.CacheDir != "" {
-		if err := os.MkdirAll(e.cfg.CacheDir, 0750); err != nil {
-			return nil, fmt.Errorf("local: create cache dir: %w", err)
+	if e.cfg.CacheDir != "" || modelPath != "" {
+		var modelCacheDir string
+		if e.cfg.CacheDir != "" {
+			modelCacheDir = filepath.Join(e.cfg.CacheDir, filepath.Base(modelPath))
+		} else if modelPath != "" {
+			modelCacheDir = filepath.Dir(modelPath)
 		}
-		opts = append(opts, litertlm.WithCacheDir(e.cfg.CacheDir))
+		if modelCacheDir != "" {
+			if err := os.MkdirAll(modelCacheDir, 0750); err != nil {
+				return nil, fmt.Errorf("local: create cache dir: %w", err)
+			}
+			opts = append(opts, litertlm.WithCacheDir(modelCacheDir))
+		}
 	}
 
 	client, err := litertlm.New(ctx, opts...)
@@ -74,11 +107,26 @@ func (e *Engine) Client(ctx context.Context) (*litertlm.Client, error) {
 		return nil, fmt.Errorf("local: initialize litertlm: %w", err)
 	}
 
-	toolHandler := shell.NewToolHandler(e.fullCfg)
 	shellTool, err := litertlm.RegisterTool(client, "execute_shell",
-		"Propose and execute a shell command on the host operating system.",
+		"Propose a shell command or script to execute on the host operating system.",
 		func(ctx context.Context, in shell.ShellInput) (shell.ShellOutput, error) {
-			return toolHandler.Handle(ctx, in)
+			// In Two-Tier architecture, the inference tier evaluates and rates safety,
+			// but NEVER executes commands against the host OS.
+			assessment := shell.AssessSafety(in.Command)
+			tc := engine.ToolCall{
+				Name:          "execute_shell",
+				Command:       in.Command,
+				Description:   in.Description,
+				Risk:          assessment.Level,
+				Warning:       assessment.Warning,
+				IsDestructive: assessment.IsDestructive,
+			}
+			if rec, ok := ctx.Value(toolCaptureCtxKey{}).(*toolRecorder); ok && rec != nil {
+				rec.add(tc)
+			}
+			return shell.ShellOutput{
+				Output: fmt.Sprintf("Command proposed for client execution: %s [Risk: %s]", in.Command, assessment.Level),
+			}, nil
 		},
 	)
 	if err != nil {
@@ -108,7 +156,10 @@ func (e *Engine) Generate(ctx context.Context, req engine.Request) (*engine.Resp
 		chatOpts = append(chatOpts, litertlm.WithTool(e.shellTool))
 	}
 
-	chat, err := client.NewChat(ctx, chatOpts...)
+	rec := &toolRecorder{}
+	execCtx := context.WithValue(ctx, toolCaptureCtxKey{}, rec)
+
+	chat, err := client.NewChat(execCtx, chatOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("local: new chat: %w", err)
 	}
@@ -119,16 +170,18 @@ func (e *Engine) Generate(ctx context.Context, req engine.Request) (*engine.Resp
 		runtimeOpts = append(runtimeOpts, litertlm.WithMaxOutputTokens(req.MaxTokens))
 	}
 
-	reply, err := chat.Send(ctx, fullPrompt, runtimeOpts...)
+	reply, err := chat.Send(execCtx, fullPrompt, runtimeOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("local: chat send: %w", err)
 	}
 
 	return &engine.Response{
-		Text:      reply.Text(),
-		Provider:  "litertlm",
-		Model:     e.cfg.Model,
-		UsedLocal: true,
+		Text:       reply.Text(),
+		ToolCalls:  rec.get(),
+		Provider:   "litertlm",
+		Model:      e.cfg.Model,
+		UsedLocal:  true,
+		TokensUsed: 0,
 	}, nil
 }
 
@@ -158,21 +211,25 @@ func (e *Engine) GenerateStream(ctx context.Context, req engine.Request) (<-chan
 			chatOpts = append(chatOpts, litertlm.WithTool(e.shellTool))
 		}
 
-		chat, err := client.NewChat(ctx, chatOpts...)
+		rec := &toolRecorder{}
+		execCtx := context.WithValue(ctx, toolCaptureCtxKey{}, rec)
+
+		chat, err := client.NewChat(execCtx, chatOpts...)
 		if err != nil {
 			out <- engine.StreamChunk{Error: fmt.Errorf("local: new chat: %w", err)}
 			return
 		}
 		defer func() { _ = chat.Close() }()
 
-		for chunk, err := range chat.SendStream(ctx, fullPrompt, runtimeOpts...) {
+		for chunk, err := range chat.SendStream(execCtx, fullPrompt, runtimeOpts...) {
 			if err != nil {
 				out <- engine.StreamChunk{Error: err}
 				return
 			}
 			out <- engine.StreamChunk{
-				Text:  chunk.Text,
-				Final: chunk.Final,
+				Text:      chunk.Text,
+				ToolCalls: rec.get(),
+				Final:     chunk.Final,
 			}
 		}
 	}()

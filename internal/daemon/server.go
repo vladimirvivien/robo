@@ -22,11 +22,8 @@ type Server struct {
 	listener   net.Listener
 	httpServer *http.Server
 	watchdog   *Watchdog
-	authToken  string
 	modelName  string
 	statePath  string
-	tlsCert    string
-	tlsKey     string
 	mu         sync.Mutex
 	running    bool
 	startedAt  time.Time
@@ -34,13 +31,10 @@ type Server struct {
 
 // ServerOptions configures the daemon server.
 type ServerOptions struct {
-	URL       string // Unified URL e.g. "http://127.0.0.1:8765" or "https://0.0.0.0:8765"
+	URL       string // Local URL e.g. "http://127.0.0.1:8765"
 	IdleTTL   time.Duration
-	AuthToken string
 	ModelName string
 	StatePath string
-	TLSCert   string // Path to TLS certificate for HTTPS
-	TLSKey    string // Path to TLS private key
 }
 
 // NewServer creates a new daemon Server with the given engine and options.
@@ -49,8 +43,6 @@ func NewServer(eng engine.Engine, opts ServerOptions) (*Server, error) {
 		return nil, errors.New("daemon: engine cannot be nil")
 	}
 
-	authToken := opts.AuthToken
-
 	modelName := opts.ModelName
 	if modelName == "" {
 		modelName = "local-model"
@@ -58,11 +50,8 @@ func NewServer(eng engine.Engine, opts ServerOptions) (*Server, error) {
 
 	s := &Server{
 		engine:    eng,
-		authToken: authToken,
 		modelName: modelName,
 		statePath: opts.StatePath,
-		tlsCert:   opts.TLSCert,
-		tlsKey:    opts.TLSKey,
 		startedAt: time.Now(),
 	}
 
@@ -74,9 +63,9 @@ func NewServer(eng engine.Engine, opts ServerOptions) (*Server, error) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", s.handleHealth)
-	mux.HandleFunc("POST /v1/generate", RequireAuth(authToken, s.handleGenerate))
-	mux.HandleFunc("POST /v1/generate/stream", RequireAuth(authToken, s.handleGenerateStream))
-	mux.HandleFunc("POST /v1/shutdown", RequireAuth(authToken, s.handleShutdown))
+	mux.HandleFunc("POST /v1/generate", s.handleGenerate)
+	mux.HandleFunc("POST /v1/generate/stream", s.handleGenerateStream)
+	mux.HandleFunc("POST /v1/shutdown", s.handleShutdown)
 
 	s.httpServer = &http.Server{
 		Handler:      mux,
@@ -87,7 +76,7 @@ func NewServer(eng engine.Engine, opts ServerOptions) (*Server, error) {
 	return s, nil
 }
 
-// Listen starts listening on the network address specified by rawURL (e.g. "http://127.0.0.1:8765" or "http://127.0.0.1:0").
+// Listen starts listening on the local loopback address specified by rawURL (e.g. "http://127.0.0.1:8765").
 func (s *Server) Listen(rawURL string) error {
 	if rawURL == "" {
 		rawURL = "http://127.0.0.1:8765"
@@ -125,7 +114,7 @@ func (s *Server) Port() int {
 	return 0
 }
 
-// URL returns the effective HTTP or HTTPS URL of the bound server.
+// URL returns the effective HTTP URL of the bound server.
 func (s *Server) URL() string {
 	if s.listener != nil {
 		if tcpAddr, ok := s.listener.Addr().(*net.TCPAddr); ok {
@@ -133,22 +122,13 @@ func (s *Server) URL() string {
 			if host == "::" || host == "0.0.0.0" {
 				host = "127.0.0.1"
 			}
-			scheme := "http"
-			if s.tlsCert != "" && s.tlsKey != "" {
-				scheme = "https"
-			}
-			return fmt.Sprintf("%s://%s:%d", scheme, host, tcpAddr.Port)
+			return fmt.Sprintf("http://%s:%d", host, tcpAddr.Port)
 		}
 	}
 	return ""
 }
 
-// AuthToken returns the secret bearer token for this daemon instance.
-func (s *Server) AuthToken() string {
-	return s.authToken
-}
-
-// Serve runs the HTTP/HTTPS server and starts the watchdog timer.
+// Serve runs the local HTTP server and starts the watchdog timer.
 func (s *Server) Serve(ctx context.Context) error {
 	s.mu.Lock()
 	if s.listener == nil {
@@ -163,7 +143,6 @@ func (s *Server) Serve(ctx context.Context) error {
 		URL:       s.URL(),
 		Port:      s.Port(),
 		PID:       os.Getpid(),
-		AuthToken: s.authToken,
 		Model:     s.modelName,
 		StartedAt: s.startedAt,
 		LastTouch: time.Now(),
@@ -175,13 +154,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	// Start watchdog loop in background
 	go s.watchdog.Start(ctx)
 
-	var err error
-	if s.tlsCert != "" && s.tlsKey != "" {
-		err = s.httpServer.ServeTLS(s.listener, s.tlsCert, s.tlsKey)
-	} else {
-		err = s.httpServer.Serve(s.listener)
-	}
-
+	err := s.httpServer.Serve(s.listener)
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -274,6 +247,7 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 
 	_ = json.NewEncoder(w).Encode(GenerateResponse{
 		Text:       resp.Text,
+		ToolCalls:  resp.ToolCalls,
 		Provider:   resp.Provider,
 		Model:      resp.Model,
 		UsedLocal:  resp.UsedLocal,
@@ -320,6 +294,7 @@ func (s *Server) handleGenerateStream(w http.ResponseWriter, r *http.Request) {
 		s.watchdog.Touch()
 		payload := StreamChunkPayload{
 			Text:       chunk.Text,
+			ToolCalls:  chunk.ToolCalls,
 			Final:      chunk.Final,
 			TokensUsed: chunk.TokensUsed,
 		}
@@ -338,11 +313,12 @@ func (s *Server) handleGenerateStream(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
+	_ = RemoveState(s.statePath)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "shutting down"})
 
 	go func() {
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = s.Shutdown(ctx)
