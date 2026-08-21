@@ -58,6 +58,7 @@ func TestValidateInferenceSetup(t *testing.T) {
 		dir := t.TempDir()
 		libDir := filepath.Join(dir, "lib")
 		_ = os.MkdirAll(libDir, 0755)
+		_ = os.WriteFile(filepath.Join(libDir, "dummy.dll"), []byte("fake-lib"), 0644)
 
 		cfg := config.NewDefaultConfig()
 		cfg.LLM.Local.LibDir = libDir
@@ -72,6 +73,7 @@ func TestValidateInferenceSetup(t *testing.T) {
 		dir := t.TempDir()
 		libDir := filepath.Join(dir, "lib")
 		_ = os.MkdirAll(libDir, 0755)
+		_ = os.WriteFile(filepath.Join(libDir, "dummy.dll"), []byte("fake-lib"), 0644)
 		modelFile := filepath.Join(dir, "model.litertlm")
 		_ = os.WriteFile(modelFile, []byte("fake-weights"), 0644)
 
@@ -88,6 +90,7 @@ func TestValidateInferenceSetup(t *testing.T) {
 		dir := t.TempDir()
 		libDir := filepath.Join(dir, "lib")
 		_ = os.MkdirAll(libDir, 0755)
+		_ = os.WriteFile(filepath.Join(libDir, "dummy.dll"), []byte("fake-lib"), 0644)
 		modelFile := filepath.Join(dir, "model.litertlm")
 		_ = os.WriteFile(modelFile, []byte("fake-weights"), 0644)
 
@@ -105,6 +108,7 @@ func TestValidateInferenceSetup(t *testing.T) {
 		dir := t.TempDir()
 		libDir := filepath.Join(dir, "lib")
 		_ = os.MkdirAll(libDir, 0755)
+		_ = os.WriteFile(filepath.Join(libDir, "dummy.dll"), []byte("fake-lib"), 0644)
 		modelFile := filepath.Join(dir, "model.litertlm")
 		_ = os.WriteFile(modelFile, []byte("fake-weights"), 0644)
 
@@ -117,6 +121,25 @@ func TestValidateInferenceSetup(t *testing.T) {
 			t.Errorf("expected success for cloud-only with API key, got %v", err)
 		}
 	})
+}
+
+func TestFindLocalModelPath_StrictRoboCache(t *testing.T) {
+	dir := t.TempDir()
+	cacheDir := filepath.Join(dir, "cache")
+	_ = os.MkdirAll(cacheDir, 0755)
+
+	modelFile := filepath.Join(cacheDir, "gemma-4-E2B-it.litertlm")
+	_ = os.WriteFile(modelFile, []byte("fake-weights"), 0644)
+
+	found := engine.FindLocalModelPath("gemma-4-e2b", cacheDir)
+	if found != modelFile {
+		t.Errorf("expected to find model at %s, got %s", modelFile, found)
+	}
+
+	notFound := engine.FindLocalModelPath("gemma-4-12b", cacheDir)
+	if notFound != "" {
+		t.Errorf("expected notFound to be empty, got %s", notFound)
+	}
 }
 
 func TestIsModelDownloaded(t *testing.T) {

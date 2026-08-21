@@ -146,6 +146,27 @@ func NewDefaultConfig() *Config {
 	}
 }
 
+// DefaultCacheDir returns the standard path to ~/.robo/cache
+func DefaultCacheDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".robo", "cache")
+	}
+	return filepath.Join(home, ".robo", "cache")
+}
+
+// DefaultLibDir returns the standard path to ~/.robo/lib/<version>
+func DefaultLibDir(version string) string {
+	if version == "" {
+		version = DefaultLocalVersion
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".robo", "lib", version)
+	}
+	return filepath.Join(home, ".robo", "lib", version)
+}
+
 // ConfigPath returns the standard path to config.yaml in the user's ~/.robo directory.
 func ConfigPath() string {
 	home, err := os.UserHomeDir()

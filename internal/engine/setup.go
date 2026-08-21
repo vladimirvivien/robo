@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/vladimirvivien/litertlm-go/pkg/libfetch"
-	"github.com/vladimirvivien/litertlm-go/pkg/litertlm"
 	"github.com/vladimirvivien/litertlm-go/pkg/modelfetch"
 	"github.com/vladimirvivien/robo/internal/config"
 	"github.com/vladimirvivien/robo/internal/ui"
@@ -30,6 +28,22 @@ type LocalSetupStatus struct {
 	HasModel    bool
 	LibDir      string
 	ModelPath   string
+}
+
+// ResolveCacheDir returns the configured cache directory or the default ~/.robo/cache.
+func ResolveCacheDir(customCacheDir string) string {
+	if customCacheDir != "" {
+		return customCacheDir
+	}
+	return config.DefaultCacheDir()
+}
+
+// ResolveLibDir returns the configured library directory or the default ~/.robo/lib/<version>.
+func ResolveLibDir(version string, customLibDir ...string) string {
+	if len(customLibDir) > 0 && customLibDir[0] != "" {
+		return customLibDir[0]
+	}
+	return config.DefaultLibDir(version)
 }
 
 // CheckCloudSetup checks if cloud model credentials (API key) are available.
@@ -72,36 +86,26 @@ func CheckCloudSetup(cfg config.CloudConfig) CloudSetupStatus {
 	}
 }
 
-// CheckLocalSetup checks if local inference configuration is valid and provisioned on disk.
+// CheckLocalSetup checks if local inference configuration is valid and provisioned on disk strictly in robo managed paths.
 func CheckLocalSetup(cfg config.LocalConfig) LocalSetupStatus {
-	status := LocalSetupStatus{
-		LibDir:    cfg.LibDir,
-		ModelPath: cfg.Model,
-	}
+	resolvedLibDir := ResolveLibDir(cfg.Version, cfg.LibDir)
+	resolvedModelPath := FindLocalModelPath(cfg.Model, cfg.CacheDir)
 
-	if status.LibDir != "" && fileExists(status.LibDir) {
-		status.HasLib = true
-	} else if IsLibDownloaded(cfg.Version) {
-		status.HasLib = true
-	}
+	hasLib := IsLibDownloaded(cfg.Version, cfg.LibDir)
+	hasModel := resolvedModelPath != ""
 
-	if FindLocalModelPath(status.ModelPath, cfg.CacheDir) != "" {
-		status.HasModel = true
+	return LocalSetupStatus{
+		Provisioned: hasLib && hasModel,
+		HasLib:      hasLib,
+		HasModel:    hasModel,
+		LibDir:      resolvedLibDir,
+		ModelPath:   resolvedModelPath,
 	}
-
-	status.Provisioned = status.HasLib && status.HasModel
-	return status
 }
 
-// IsLibDownloaded checks if LiteRT-LM shared libraries are already cached locally on disk.
-func IsLibDownloaded(version string) bool {
-	if version == "" {
-		version = config.DefaultLocalVersion
-	}
-	dir, err := libfetch.DefaultDir(version)
-	if err != nil {
-		return false
-	}
+// IsLibDownloaded checks if LiteRT-LM shared libraries exist in the robo managed directory.
+func IsLibDownloaded(version string, customLibDir ...string) bool {
+	dir := ResolveLibDir(version, customLibDir...)
 	entries, err := os.ReadDir(dir)
 	if err != nil || len(entries) == 0 {
 		return false
@@ -109,11 +113,12 @@ func IsLibDownloaded(version string) bool {
 	return true
 }
 
-// FindLocalModelPath returns the absolute path to a cached or local model file on disk.
+// FindLocalModelPath returns the absolute path to a cached model file, strictly searching robo cache paths.
 func FindLocalModelPath(modelIDOrPath string, customCacheDir string) string {
-	if modelIDOrPath == "" {
+	if strings.TrimSpace(modelIDOrPath) == "" {
 		return ""
 	}
+	// 1. Explicit direct file path on disk
 	if fileExists(modelIDOrPath) && !isDirectory(modelIDOrPath) {
 		return modelIDOrPath
 	}
@@ -127,147 +132,162 @@ func FindLocalModelPath(modelIDOrPath string, customCacheDir string) string {
 		candidates = append(candidates, filepath.Base(modelIDOrPath)+".litertlm")
 	}
 
-	searchDirs := []string{}
-	if customCacheDir != "" {
-		searchDirs = append(searchDirs, customCacheDir)
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		searchDirs = append(searchDirs,
-			filepath.Join(home, ".robo", "cache"),
-		)
-	}
-	if cacheDir, err := modelfetch.DefaultCacheDir(); err == nil {
-		searchDirs = append(searchDirs, cacheDir)
-	}
+	cacheDir := ResolveCacheDir(customCacheDir)
 
-	// Search prioritized candidate filenames across directories
+	// Search strictly within the robo cache directory
 	for _, name := range candidates {
 		if name == "" {
 			continue
 		}
-		for _, dir := range searchDirs {
-			// 1. Check namespaced folder: <dir>/<name>/<name>
-			namespaced := filepath.Join(dir, name, name)
-			if fileExists(namespaced) && !isDirectory(namespaced) {
-				return namespaced
-			}
-			// 2. Check direct file: <dir>/<name>
-			full := filepath.Join(dir, name)
-			if fileExists(full) && !isDirectory(full) {
-				return full
-			}
+		// Direct file: <cacheDir>/<name>
+		full := filepath.Join(cacheDir, name)
+		if fileExists(full) && !isDirectory(full) {
+			return full
+		}
+		// Legacy nested folder: <cacheDir>/<name>/<name>
+		namespaced := filepath.Join(cacheDir, name, name)
+		if fileExists(namespaced) && !isDirectory(namespaced) {
+			return namespaced
 		}
 	}
 
 	return ""
 }
 
-// IsModelDownloaded checks if the specified model is present on disk or in local cache locations.
+// IsModelDownloaded checks if the specified model is present in the robo cache directory.
 func IsModelDownloaded(modelIDOrPath string) bool {
 	return FindLocalModelPath(modelIDOrPath, "") != ""
 }
 
-// EnsureLocalSetup ensures the local libraries and model are downloaded via litertlm-go.
+// EnsureLocalSetup ensures the local libraries and model are downloaded.
 func EnsureLocalSetup(ctx context.Context, cfg config.LocalConfig) (string, string, error) {
 	return EnsureLocalSetupWithProgress(ctx, cfg)
 }
 
-// EnsureLocalSetupWithProgress downloads libraries and models with visual terminal feedback.
+// EnsureLocalSetupWithProgress downloads libraries and models into robo managed paths with visual terminal feedback.
 func EnsureLocalSetupWithProgress(ctx context.Context, cfg config.LocalConfig) (string, string, error) {
-	libDir := cfg.LibDir
+	libDir := ResolveLibDir(cfg.Version, cfg.LibDir)
 	modelPath := cfg.Model
 
-	// 1. Provision native shared libraries if needed
-	if libDir == "" && cfg.AutoDownload {
+	// 1. Provision native shared libraries into ~/.robo/lib/<version>
+	if cfg.AutoDownload {
 		libVersion := cfg.Version
 		if libVersion == "" {
 			libVersion = config.DefaultLocalVersion
 		}
 
-		if !IsLibDownloaded(libVersion) {
-			if ui.IsStdoutTerminal() {
-				sp := ui.StartSpinner("Downloading LiteRT-LM native runtime libraries...")
-				dir, err := litertlm.FetchLib(runtime.GOOS, runtime.GOARCH, libVersion)
-				sp.Stop()
-				if err != nil {
-					return "", "", fmt.Errorf("local: fetch library: %w", err)
-				}
-				libDir = dir
-				fmt.Println(ui.BadgeSuccess("✓ LiteRT-LM runtime libraries ready"))
-			} else {
-				dir, err := litertlm.FetchLib(runtime.GOOS, runtime.GOARCH, libVersion)
-				if err != nil {
-					return "", "", fmt.Errorf("local: fetch library: %w", err)
-				}
-				libDir = dir
+		if !IsLibDownloaded(libVersion, cfg.LibDir) {
+			targetLibDir, err := DownloadLibAsset(ctx, libVersion, cfg.LibDir, false, ui.IsStdoutTerminal())
+			if err != nil {
+				return "", "", fmt.Errorf("local: fetch library: %w", err)
 			}
-		} else {
-			dir, err := libfetch.DefaultDir(libVersion)
-			if err == nil {
-				libDir = dir
-			}
+			libDir = targetLibDir
 		}
 	}
 
-	// 2. Provision model weights if needed
+	// 2. Provision model weights into ~/.robo/cache
 	foundPath := FindLocalModelPath(modelPath, cfg.CacheDir)
 	if foundPath != "" {
 		modelPath = foundPath
 	} else if cfg.AutoDownload {
-		targetURL, targetFilename := ResolveModelTarget(modelPath)
-		if targetURL == "" {
-			return "", "", fmt.Errorf("local: unable to resolve model %q", modelPath)
+		cachedPath, err := DownloadModelAsset(ctx, modelPath, cfg.CacheDir, false, ui.IsStdoutTerminal())
+		if err != nil {
+			return "", "", fmt.Errorf("local: fetch model %q: %w", modelPath, err)
 		}
-
-		cacheDir := cfg.CacheDir
-		if cacheDir == "" {
-			if home, err := os.UserHomeDir(); err == nil {
-				cacheDir = filepath.Join(home, ".robo", "cache")
-			} else {
-				cacheDir, _ = modelfetch.DefaultCacheDir()
-			}
-		}
-
-		// Namespaced model folder: ~/.robo/cache/gemma-4-2B-it.litertlm/
-		modelFolder := filepath.Join(cacheDir, targetFilename)
-		destPath := filepath.Join(modelFolder, targetFilename)
-		directPath := filepath.Join(cacheDir, targetFilename)
-
-		if fileExists(destPath) && !isDirectory(destPath) {
-			modelPath = destPath
-		} else if fileExists(directPath) && !isDirectory(directPath) {
-			modelPath = directPath
-		} else {
-			if err := os.MkdirAll(modelFolder, 0750); err != nil {
-				return "", "", fmt.Errorf("local: create model cache dir: %w", err)
-			}
-			var pb *ui.ProgressBar
-			var opts []modelfetch.Option
-			opts = append(opts,
-				modelfetch.WithDir(modelFolder),
-				modelfetch.WithFilename(targetFilename),
-				modelfetch.WithSkipIfExists(false),
-			)
-
-			if ui.IsStdoutTerminal() {
-				pb = ui.NewProgressBar(fmt.Sprintf("Downloading %s", targetFilename))
-				opts = append(opts, modelfetch.WithProgress(func(downloaded, total int64, pct float64) {
-					pb.Update(downloaded, total, pct)
-				}))
-			}
-
-			cachedPath, err := litertlm.FetchModel(ctx, targetURL, opts...)
-			if pb != nil {
-				pb.Finish(fmt.Sprintf("✓ Downloaded %s", targetFilename))
-			}
-			if err != nil {
-				return "", "", fmt.Errorf("local: fetch model %q: %w", modelPath, err)
-			}
-			modelPath = cachedPath
-		}
+		modelPath = cachedPath
 	}
 
 	return libDir, modelPath, nil
+}
+
+// DownloadModelAsset downloads a model by identifier/alias/URL directly to the robo cache directory.
+func DownloadModelAsset(ctx context.Context, modelIDOrURL string, customCacheDir string, force bool, showUI bool) (string, error) {
+	if strings.TrimSpace(modelIDOrURL) == "" {
+		return "", fmt.Errorf("model identifier cannot be empty")
+	}
+
+	targetURL, targetFilename := ResolveModelTarget(modelIDOrURL)
+	if targetURL == "" {
+		return "", fmt.Errorf("unable to resolve model %q", modelIDOrURL)
+	}
+
+	cacheDir := ResolveCacheDir(customCacheDir)
+
+	if !force {
+		found := FindLocalModelPath(modelIDOrURL, cacheDir)
+		if found != "" {
+			return found, nil
+		}
+	}
+
+	if err := os.MkdirAll(cacheDir, 0750); err != nil {
+		return "", fmt.Errorf("create model cache dir: %w", err)
+	}
+
+	destPath := filepath.Join(cacheDir, targetFilename)
+	skipIfExists := fileExists(destPath) && !force
+
+	var pb *ui.ProgressBar
+	var opts []modelfetch.Option
+	opts = append(opts,
+		modelfetch.WithDir(cacheDir),
+		modelfetch.WithFilename(targetFilename),
+		modelfetch.WithSkipIfExists(skipIfExists),
+	)
+
+	if showUI && ui.IsStdoutTerminal() {
+		pb = ui.NewProgressBar(fmt.Sprintf("Downloading %s", targetFilename))
+		opts = append(opts, modelfetch.WithProgress(func(downloaded, total int64, pct float64) {
+			pb.Update(downloaded, total, pct)
+		}))
+	}
+
+	cachedPath, err := modelfetch.Fetch(ctx, targetURL, opts...)
+	if pb != nil {
+		pb.Finish(fmt.Sprintf("✓ Downloaded %s", targetFilename))
+	}
+	if err != nil {
+		return "", fmt.Errorf("fetch model %q: %w", modelIDOrURL, err)
+	}
+
+	return cachedPath, nil
+}
+
+// DownloadLibAsset downloads the LiteRT-LM shared libraries directly to the robo lib directory.
+func DownloadLibAsset(ctx context.Context, version string, customLibDir string, force bool, showUI bool) (string, error) {
+	if version == "" {
+		version = config.DefaultLocalVersion
+	}
+
+	targetDir := ResolveLibDir(version, customLibDir)
+
+	if !force && IsLibDownloaded(version, customLibDir) {
+		return targetDir, nil
+	}
+
+	if err := os.MkdirAll(targetDir, 0750); err != nil {
+		return "", fmt.Errorf("create lib dir: %w", err)
+	}
+
+	var sp *ui.Spinner
+	if showUI && ui.IsStdoutTerminal() {
+		sp = ui.StartSpinner(fmt.Sprintf("Downloading LiteRT-LM native runtime libraries (%s)...", version))
+	}
+
+	opts := []libfetch.Option{
+		libfetch.WithDir(targetDir),
+		libfetch.WithVersion(version),
+	}
+
+	dir, err := libfetch.Fetch(ctx, opts...)
+	if sp != nil {
+		sp.Stop()
+	}
+	if err != nil {
+		return "", fmt.Errorf("fetch library: %w", err)
+	}
+
+	return dir, nil
 }
 
 // ValidateInferenceSetup verifies backend availability before running requests and fails fast if dependencies are missing.
@@ -279,12 +299,14 @@ func ValidateInferenceSetup(cfg *config.Config, forceBackend string) error {
 
 	// 1. LiteRT-LM runtime library is always required
 	if !localStatus.HasLib {
-		return fmt.Errorf("LiteRT-LM runtime library (%s) was not found on disk.\n\nTo resolve:\n  • Run 'robo init' to download the runtime library\n  • Or specify 'llm.local.lib_dir' in %s", cfg.LLM.Local.Version, config.ConfigPath())
+		return fmt.Errorf("LiteRT-LM runtime library (%s) was not found on disk at %s.\n\nTo resolve:\n  • Run 'robo init' or 'robo get --litertlm-lib %s' to download libraries\n  • Or specify 'llm.local.lib_dir' in %s",
+			cfg.LLM.Local.Version, localStatus.LibDir, cfg.LLM.Local.Version, config.ConfigPath())
 	}
 
 	// 2. Local model weights are always required (local litertlm is mandatory)
 	if !localStatus.HasModel {
-		return fmt.Errorf("configured local model %q was not found on disk.\n\nTo resolve:\n  • Run 'robo init' to download the model weights\n  • Or update 'llm.local.model' in %s with a valid local path", cfg.LLM.Local.Model, config.ConfigPath())
+		return fmt.Errorf("configured local model %q was not found on disk.\n\nTo resolve:\n  • Run 'robo init' or 'robo get --model %s' to download model weights\n  • Or update 'llm.local.model' in %s with a valid local path",
+			cfg.LLM.Local.Model, cfg.LLM.Local.Model, config.ConfigPath())
 	}
 
 	// 3. If cloud-only was explicitly requested, ensure cloud credentials are configured
