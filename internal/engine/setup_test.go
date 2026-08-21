@@ -1,6 +1,8 @@
 package engine_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/vladimirvivien/robo/internal/config"
@@ -42,8 +44,56 @@ func TestValidateInferenceSetup(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "")
 
-	t.Run("cloud-only fails without API key", func(t *testing.T) {
+	t.Run("fails when local library directory is missing", func(t *testing.T) {
 		cfg := config.NewDefaultConfig()
+		cfg.LLM.Local.LibDir = "/nonexistent/lib/dir"
+		cfg.LLM.Local.Model = "/nonexistent/model.bin"
+		err := engine.ValidateInferenceSetup(cfg, "auto")
+		if err == nil {
+			t.Error("expected error when local library is missing, got nil")
+		}
+	})
+
+	t.Run("fails when local model file is missing", func(t *testing.T) {
+		dir := t.TempDir()
+		libDir := filepath.Join(dir, "lib")
+		_ = os.MkdirAll(libDir, 0755)
+
+		cfg := config.NewDefaultConfig()
+		cfg.LLM.Local.LibDir = libDir
+		cfg.LLM.Local.Model = "/nonexistent/model.bin"
+		err := engine.ValidateInferenceSetup(cfg, "auto")
+		if err == nil {
+			t.Error("expected error when local model is missing, got nil")
+		}
+	})
+
+	t.Run("succeeds when local files exist", func(t *testing.T) {
+		dir := t.TempDir()
+		libDir := filepath.Join(dir, "lib")
+		_ = os.MkdirAll(libDir, 0755)
+		modelFile := filepath.Join(dir, "model.litertlm")
+		_ = os.WriteFile(modelFile, []byte("fake-weights"), 0644)
+
+		cfg := config.NewDefaultConfig()
+		cfg.LLM.Local.LibDir = libDir
+		cfg.LLM.Local.Model = modelFile
+		err := engine.ValidateInferenceSetup(cfg, "auto")
+		if err != nil {
+			t.Errorf("expected success when local files exist, got %v", err)
+		}
+	})
+
+	t.Run("cloud-only fails without API key even if local exists", func(t *testing.T) {
+		dir := t.TempDir()
+		libDir := filepath.Join(dir, "lib")
+		_ = os.MkdirAll(libDir, 0755)
+		modelFile := filepath.Join(dir, "model.litertlm")
+		_ = os.WriteFile(modelFile, []byte("fake-weights"), 0644)
+
+		cfg := config.NewDefaultConfig()
+		cfg.LLM.Local.LibDir = libDir
+		cfg.LLM.Local.Model = modelFile
 		cfg.LLM.Cloud.APIKey = ""
 		err := engine.ValidateInferenceSetup(cfg, "cloud-only")
 		if err == nil {
@@ -51,44 +101,20 @@ func TestValidateInferenceSetup(t *testing.T) {
 		}
 	})
 
-	t.Run("cloud-only succeeds with API key", func(t *testing.T) {
+	t.Run("cloud-only succeeds with API key and local files", func(t *testing.T) {
+		dir := t.TempDir()
+		libDir := filepath.Join(dir, "lib")
+		_ = os.MkdirAll(libDir, 0755)
+		modelFile := filepath.Join(dir, "model.litertlm")
+		_ = os.WriteFile(modelFile, []byte("fake-weights"), 0644)
+
 		cfg := config.NewDefaultConfig()
+		cfg.LLM.Local.LibDir = libDir
+		cfg.LLM.Local.Model = modelFile
 		cfg.LLM.Cloud.APIKey = "valid-key"
 		err := engine.ValidateInferenceSetup(cfg, "cloud-only")
 		if err != nil {
 			t.Errorf("expected success for cloud-only with API key, got %v", err)
-		}
-	})
-
-	t.Run("local-only fails when dependency files are missing on disk", func(t *testing.T) {
-		cfg := config.NewDefaultConfig()
-		cfg.LLM.Local.LibDir = "/nonexistent/lib/dir"
-		cfg.LLM.Local.Model = "/nonexistent/model.bin"
-		err := engine.ValidateInferenceSetup(cfg, "local-only")
-		if err == nil {
-			t.Error("expected error for local-only when missing files, got nil")
-		}
-	})
-
-	t.Run("auto succeeds with cloud when local is disabled", func(t *testing.T) {
-		cfg := config.NewDefaultConfig()
-		cfg.LLM.Local.Enabled = false
-		cfg.LLM.Cloud.Enabled = true
-		cfg.LLM.Cloud.APIKey = "valid-cloud-key"
-		err := engine.ValidateInferenceSetup(cfg, "auto")
-		if err != nil {
-			t.Errorf("expected success for cloud when local is disabled, got %v", err)
-		}
-	})
-
-	t.Run("auto fails when local is enabled but files are missing on disk", func(t *testing.T) {
-		cfg := config.NewDefaultConfig()
-		cfg.LLM.Local.Enabled = true
-		cfg.LLM.Local.LibDir = "/nonexistent/lib/dir"
-		cfg.LLM.Local.Model = "/nonexistent/model.bin"
-		err := engine.ValidateInferenceSetup(cfg, "auto")
-		if err == nil {
-			t.Error("expected error when local is enabled but files are missing on disk, got nil")
 		}
 	})
 }

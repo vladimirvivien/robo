@@ -277,45 +277,24 @@ func ValidateInferenceSetup(cfg *config.Config, forceBackend string) error {
 
 	target := strings.ToLower(forceBackend)
 
-	switch target {
-	case "local-only", "local":
-		if !localStatus.HasLib {
-			return fmt.Errorf("local inference failed: LiteRT-LM runtime library (%s) was not found on disk.\nRun 'robo init' to download dependencies, or specify 'lib_dir' in %s", cfg.LLM.Local.Version, config.ConfigPath())
-		}
-		if !localStatus.HasModel {
-			return fmt.Errorf("local inference failed: model %q was not found on disk.\nRun 'robo init' to download the model, or configure a local model file in %s", cfg.LLM.Local.Model, config.ConfigPath())
-		}
-		return nil
-
-	case "cloud-only", "cloud":
-		if !cloudStatus.Configured {
-			return fmt.Errorf("cloud inference is not set up: missing API key for provider %q (set %s in environment)", cfg.LLM.Cloud.Provider, cloudStatus.APIKeyEnv)
-		}
-		return nil
-
-	default: // auto / hybrid
-		// If local inference is enabled, fail fast if dependencies are missing on disk
-		if cfg.LLM.Local.Enabled {
-			if !localStatus.HasLib {
-				return fmt.Errorf("local inference is enabled but LiteRT-LM runtime library (%s) was not found on disk.\nRun 'robo init' to download dependencies, or set llm.local.enabled=false in %s", cfg.LLM.Local.Version, config.ConfigPath())
-			}
-			if !localStatus.HasModel {
-				return fmt.Errorf("local inference is enabled but model %q was not found on disk.\nRun 'robo init' to download the model, or configure a valid model path in %s", cfg.LLM.Local.Model, config.ConfigPath())
-			}
-			return nil
-		}
-
-		// Local is disabled, verify cloud availability
-		if cfg.LLM.Cloud.Enabled && cloudStatus.Configured {
-			return nil
-		}
-
-		if !cloudStatus.Configured {
-			return fmt.Errorf("no language model is available: local inference is disabled and cloud API key %s is not set.\nRun 'robo init' to set up local models, or set %s in your environment", cloudStatus.APIKeyEnv, cloudStatus.APIKeyEnv)
-		}
-
-		return nil
+	// 1. LiteRT-LM runtime library is always required
+	if !localStatus.HasLib {
+		return fmt.Errorf("LiteRT-LM runtime library (%s) was not found on disk.\n\nTo resolve:\n  • Run 'robo init' to download the runtime library\n  • Or specify 'llm.local.lib_dir' in %s", cfg.LLM.Local.Version, config.ConfigPath())
 	}
+
+	// 2. Local model weights are always required (local litertlm is mandatory)
+	if !localStatus.HasModel {
+		return fmt.Errorf("configured local model %q was not found on disk.\n\nTo resolve:\n  • Run 'robo init' to download the model weights\n  • Or update 'llm.local.model' in %s with a valid local path", cfg.LLM.Local.Model, config.ConfigPath())
+	}
+
+	// 3. If cloud-only was explicitly requested, ensure cloud credentials are configured
+	if target == "cloud-only" || target == "cloud" {
+		if !cloudStatus.Configured {
+			return fmt.Errorf("cloud inference is not configured: missing API key for provider %q.\n\nTo resolve:\n  • Set %s in your environment", cfg.LLM.Cloud.Provider, cloudStatus.APIKeyEnv)
+		}
+	}
+
+	return nil
 }
 
 func fileExists(path string) bool {

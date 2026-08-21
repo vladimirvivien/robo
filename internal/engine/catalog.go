@@ -44,14 +44,6 @@ var ModelCatalog = []ModelInfo{
 		Size:        "7.5 GB",
 	},
 	{
-		ID:          "litert-community/gemma3-1b-it-int4",
-		Name:        "Gemma 3 1B (int4)",
-		Description: "Gemma 3 1B  [~580 MB] • Ultra-compact on-device SLM",
-		URL:         "https://huggingface.co/litert-community/gemma3-1b-it-int4/resolve/main/gemma3-1b-it-int4.litertlm",
-		Filename:    "gemma3-1b-it-int4.litertlm",
-		Size:        "580 MB",
-	},
-	{
 		ID:          "litert-community/qwen3-4b-it",
 		Name:        "Qwen 3 4B (int8)",
 		Description: "Qwen 3 4B   [~2.5 GB] • Multilingual & strong tool calling",
@@ -87,10 +79,6 @@ func init() {
 			catalogLookup["gemma-4-12b"] = m
 			catalogLookup["12b"] = m
 			catalogLookup["litert-community/gemma-4-12b-it-litert-lm"] = m
-		case "litert-community/gemma3-1b-it-int4":
-			catalogLookup["gemma3-1b"] = m
-			catalogLookup["gemma3-1b-it"] = m
-			catalogLookup["1b"] = m
 		case "litert-community/qwen3-4b-it":
 			catalogLookup["qwen3-4b"] = m
 			catalogLookup["qwen-4b"] = m

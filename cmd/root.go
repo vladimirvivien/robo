@@ -84,35 +84,10 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	}
 
 	if !config.ConfigFileExists(targetCfgPath) {
-		if ui.IsStdoutTerminal() && ui.IsStdinTerminal() {
-			fmt.Println()
-			fmt.Println(ui.Card(
-				ui.BadgeWarning("robo • Not Initialized"),
-				fmt.Sprintf("Configuration was not found at %s.", targetCfgPath),
-				"Setup required",
-			))
-			fmt.Println()
-
-			confirmed, err := ui.PromptConfirm("Would you like to initialize robo and configure local models now?")
-			if err == nil && confirmed {
-				if initErr := runInit(cmd, nil); initErr != nil {
-					return initErr
-				}
-				if len(args) == 0 {
-					return nil
-				}
-			} else {
-				if cfgFile != "" {
-					return fmt.Errorf("config file not found: %s\nSpecify a valid configuration file path, or run 'robo init'", cfgFile)
-				}
-				return fmt.Errorf("robo is not initialized: config file not found at %s\nRun 'robo init' to set up local models and configuration", targetCfgPath)
-			}
-		} else {
-			if cfgFile != "" {
-				return fmt.Errorf("config file not found: %s\nSpecify a valid configuration file path, or run 'robo init'", cfgFile)
-			}
-			return fmt.Errorf("robo is not initialized: config file not found at %s\nRun 'robo init' to set up local models and configuration", targetCfgPath)
+		if cfgFile != "" {
+			return fmt.Errorf("configuration file not found: %s\n\nTo resolve:\n  • Specify a valid configuration file with --config\n  • Or run 'robo init' to initialize robo", cfgFile)
 		}
+		return fmt.Errorf("robo is not initialized (configuration not found at %s)\n\nTo resolve:\n  • Run 'robo init' to set up local models and configuration", targetCfgPath)
 	}
 
 	cfg, err := config.Load(cfgFile)
@@ -165,38 +140,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		forceBackend = "cloud-only"
 	}
 	if err := engine.ValidateInferenceSetup(cfg, forceBackend); err != nil {
-		// If local inference dependencies are missing in interactive terminal, prompt to re-initialize
-		if ui.IsStdoutTerminal() && ui.IsStdinTerminal() && cfg.LLM.Local.Enabled {
-			status := engine.CheckLocalSetup(cfg.LLM.Local)
-			if !status.HasLib || !status.HasModel {
-				fmt.Println()
-				fmt.Println(ui.Card(
-					ui.BadgeWarning("robo • Setup Required"),
-					err.Error(),
-					"",
-				))
-				fmt.Println()
-				confirmed, promptErr := ui.PromptConfirm("Would you like to run 'robo init' to download missing dependencies now?")
-				if promptErr == nil && confirmed {
-					if initErr := runInit(cmd, nil); initErr != nil {
-						return initErr
-					}
-					if len(args) == 0 {
-						return nil
-					}
-					// Reload config after re-init
-					if reloaded, loadErr := config.Load(cfgFile); loadErr == nil {
-						cfg = reloaded
-					}
-				} else {
-					return err
-				}
-			} else {
-				return err
-			}
-		} else {
-			return err
-		}
+		return err
 	}
 
 	// 4. Start visual spinner immediately upon prompt receipt

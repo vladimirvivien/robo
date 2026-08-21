@@ -21,6 +21,7 @@ import (
 // Client coordinates sending requests to the local background daemon with fallback.
 type Client struct {
 	cfg            config.Config
+	baseURL        string
 	statePath      string
 	httpClient     *http.Client
 	inProcEngine   engine.Engine
@@ -32,6 +33,13 @@ type Client struct {
 
 // ClientOption configures a Client instance.
 type ClientOption func(*Client)
+
+// WithBaseURL overrides the local loopback URL (used for unit testing with dynamic ports).
+func WithBaseURL(url string) ClientOption {
+	return func(c *Client) {
+		c.baseURL = url
+	}
+}
 
 // WithStatePath overrides the location of robod.json.
 func WithStatePath(path string) ClientOption {
@@ -65,6 +73,7 @@ func WithHTTPClient(client *http.Client) ClientOption {
 func NewClient(cfg config.Config, opts ...ClientOption) *Client {
 	c := &Client{
 		cfg:       cfg,
+		baseURL:   config.DefaultRobodURL,
 		statePath: StatePath(),
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
@@ -106,9 +115,17 @@ func (c *Client) resolveEndpoint(ctx context.Context) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	baseURL := config.DefaultRobodURL
+	// 1. If robod disabled, fail fast to in-process fallback
+	if !c.cfg.Robod.Enabled {
+		return "", errors.New("robod: daemon disabled")
+	}
 
-	// 1. Check if local endpoint is already running
+	baseURL := c.baseURL
+	if baseURL == "" {
+		baseURL = config.DefaultRobodURL
+	}
+
+	// 2. Check if local endpoint is already running
 	if c.pingURL(ctx, baseURL) == nil {
 		if c.cachedState == nil {
 			if state, err := LoadState(c.statePath); err == nil {
@@ -116,11 +133,6 @@ func (c *Client) resolveEndpoint(ctx context.Context) (string, error) {
 			}
 		}
 		return baseURL, nil
-	}
-
-	// 2. If robod disabled, fail fast to in-process fallback
-	if !c.cfg.Robod.Enabled {
-		return "", errors.New("robod: daemon disabled")
 	}
 
 	// 3. Try spawning local daemon

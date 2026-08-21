@@ -53,7 +53,7 @@ func TestCommandCard(t *testing.T) {
 }
 
 func TestHeaderBanner(t *testing.T) {
-	localBanner := ui.HeaderBanner("litertlm", "gemma3-1b-it-int4", true)
+	localBanner := ui.HeaderBanner("litertlm", "gemma-4-e2b", true)
 	if !strings.Contains(localBanner, "Local:") {
 		t.Errorf("HeaderBanner local missing prefix: %s", localBanner)
 	}

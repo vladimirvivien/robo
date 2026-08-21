@@ -34,11 +34,10 @@ func TestLookupModel(t *testing.T) {
 		{"litert-community/gemma-4-E4B-it", "litert-community/gemma-4-E4B-it", true},
 		{"litert-community/gemma-4-E2B-it", "litert-community/gemma-4-E2B-it", true},
 		{"litert-community/gemma-4-12B-it", "litert-community/gemma-4-12B-it", true},
-		{"litert-community/gemma3-1b-it-int4", "litert-community/gemma3-1b-it-int4", true},
 		{"litert-community/qwen3-4b-it", "litert-community/qwen3-4b-it", true},
 		{"gemma-4-4b", "litert-community/gemma-4-E4B-it", true},
 		{"gemma-4-e2b", "litert-community/gemma-4-E2B-it", true},
-		{"gemma3-1b", "litert-community/gemma3-1b-it-int4", true},
+		{"gemma-4-12b", "litert-community/gemma-4-12B-it", true},
 		{"qwen3-4b", "litert-community/qwen3-4b-it", true},
 		{"nonexistent-model-xyz", "", false},
 	}

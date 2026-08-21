@@ -23,7 +23,10 @@ var InitCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize robo, configure models, and download runtime dependencies",
 	Long: `Performs pre-flight checks, provisions Google LiteRT-LM runtime dependencies (v0.16.0),
-configures on-device Gemma 4 models, and generates ~/.robo/config.yaml.`,
+configures on-device Gemma 4 models, and generates configuration (default: ~/.robo/config.yaml).
+
+To save configuration to a custom location, specify the --config flag:
+  robo init --config /path/to/custom-config.yaml`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE:          runInit,
@@ -85,7 +88,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if isInteractive {
 		fmt.Println()
 		fmt.Println(ui.Card(
-			ui.BadgeSuccess("robo • Setup & Initialization"),
+			ui.BadgeSuccess("🤖 robo • Setup & Initialization"),
 			"Configure your local on-device language model.\nGoogle LiteRT-LM • Private & Offline",
 			"",
 		))
@@ -136,20 +139,25 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// 5. Completion notice
 	if isInteractive {
 		fmt.Println()
+		exampleCmd := `robo "which process is consuming the most cpu"`
+		if cfgFile != "" {
+			exampleCmd = fmt.Sprintf(`robo --config %s "which process is consuming the most cpu"`, targetConfigPath)
+		}
 		summary := fmt.Sprintf(
-			"• Config:   %s\n• Model:    %s\n• Runtime:  LiteRT-LM %s\n• Backend:  %s\n\nTry running:\n  robo \"explain how go mutexes work\"",
+			"• Config:   %s\n• Model:    %s\n• Runtime:  LiteRT-LM %s\n• Backend:  %s\n\nTry running:\n  %s",
 			targetConfigPath,
 			selectedModel,
 			cfg.LLM.Local.Version,
 			cfg.LLM.Local.Backend,
+			exampleCmd,
 		)
 		fmt.Println(ui.Card(
-			ui.BadgeSuccess("Initialization Complete"),
+			ui.BadgeSuccess("🤖 robo • Initialization Complete"),
 			summary,
-			"Hot-start daemon ready",
+			"",
 		))
 	} else {
-		fmt.Println("Initialization complete. On-device models ready.")
+		fmt.Printf("Initialization complete. On-device models ready (%s).\n", targetConfigPath)
 	}
 
 	return nil

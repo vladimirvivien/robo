@@ -19,7 +19,7 @@ func TestClient_DirectAndStream(t *testing.T) {
 	statePath := filepath.Join(dir, "daemon.json")
 
 	server, err := daemon.NewServer(mockEngine, daemon.ServerOptions{
-		URL:       config.DefaultRobodURL,
+		URL:       "http://127.0.0.1:0",
 		ModelName: "test-model",
 		StatePath: statePath,
 		IdleTTL:   5 * time.Minute,
@@ -28,7 +28,7 @@ func TestClient_DirectAndStream(t *testing.T) {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	if err := server.Listen(config.DefaultRobodURL); err != nil {
+	if err := server.Listen("http://127.0.0.1:0"); err != nil {
 		t.Fatalf("Listen: %v", err)
 	}
 
@@ -40,6 +40,7 @@ func TestClient_DirectAndStream(t *testing.T) {
 	cfg.Robod.Enabled = true
 
 	client := daemon.NewClient(cfg,
+		daemon.WithBaseURL(server.URL()),
 		daemon.WithStatePath(statePath),
 		daemon.WithLauncher(func() error { return nil }),
 	)
@@ -151,7 +152,7 @@ func TestClient_StreamingToolCalls(t *testing.T) {
 	statePath := filepath.Join(dir, "robod.json")
 
 	server, err := daemon.NewServer(mockEngine, daemon.ServerOptions{
-		URL:       config.DefaultRobodURL,
+		URL:       "http://127.0.0.1:0",
 		ModelName: "tool-model",
 		StatePath: statePath,
 		IdleTTL:   5 * time.Minute,
@@ -160,7 +161,7 @@ func TestClient_StreamingToolCalls(t *testing.T) {
 		t.Fatalf("NewServer: %v", err)
 	}
 
-	if err := server.Listen(config.DefaultRobodURL); err != nil {
+	if err := server.Listen("http://127.0.0.1:0"); err != nil {
 		t.Fatalf("Listen: %v", err)
 	}
 
@@ -170,6 +171,7 @@ func TestClient_StreamingToolCalls(t *testing.T) {
 	cfg := *config.NewDefaultConfig()
 
 	client := daemon.NewClient(cfg,
+		daemon.WithBaseURL(server.URL()),
 		daemon.WithStatePath(statePath),
 		daemon.WithLauncher(func() error { return nil }),
 	)

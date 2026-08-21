@@ -180,21 +180,21 @@ func PromptIndicator(prefix string) string {
 // HeaderBanner formats the engine execution provenance header.
 func HeaderBanner(provider, model string, usedLocal bool) string {
 	if usedLocal {
-		badgeText := fmt.Sprintf("Local: %s", model)
+		badgeText := fmt.Sprintf("🤖 Local: %s", model)
 		if model == "" {
-			badgeText = "Local: LiteRT-LM"
+			badgeText = "🤖 Local: LiteRT-LM"
 		}
 		return BadgeLocal(badgeText)
 	}
 
-	badgeText := fmt.Sprintf("Cloud: %s", model)
+	badgeText := fmt.Sprintf("🤖 Cloud: %s", model)
 	if model == "" {
-		badgeText = fmt.Sprintf("Cloud: %s", provider)
+		badgeText = fmt.Sprintf("🤖 Cloud: %s", provider)
 	}
 	return BadgeCloud(badgeText)
 }
 
 // ErrorCard formats an error message in a styled warning box.
 func ErrorCard(errText string) string {
-	return Card(BadgeError("Error"), errText, "")
+	return Card(BadgeError("🤖 Error"), errText, "")
 }
