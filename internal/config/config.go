@@ -127,7 +127,7 @@ func NewDefaultConfig() *Config {
 				Version:      DefaultLocalVersion,
 			},
 			Cloud: CloudConfig{
-				Enabled:   true,
+				Enabled:   false,
 				Provider:  DefaultCloudProvider,
 				Model:     DefaultCloudModel,
 				APIKeyEnv: DefaultCloudAPIKeyEnv,

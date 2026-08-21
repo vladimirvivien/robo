@@ -105,6 +105,78 @@ type InitPreferences struct {
 	Backend string
 }
 
+// CloudPreferences holds choices selected for optional cloud model setup.
+type CloudPreferences struct {
+	ConfigureCloud bool
+	Provider       string
+	Model          string
+	APIKeyEnv      string
+}
+
+// PromptCloudSelection prompts the user if they wish to set up a cloud model, and captures credentials if approved.
+func PromptCloudSelection() (CloudPreferences, error) {
+	StopActiveSpinner()
+
+	var configure bool
+	confirmField := huh.NewConfirm().
+		Title("Would you also like to configure a cloud frontier model (e.g. Gemini, Claude, OpenAI)?").
+		Description("Cloud models provide frontier reasoning for high-complexity prompts when enabled.").
+		Value(&configure)
+
+	confirmForm := huh.NewForm(huh.NewGroup(confirmField))
+	if err := confirmForm.Run(); err != nil {
+		return CloudPreferences{}, err
+	}
+
+	if !configure {
+		return CloudPreferences{ConfigureCloud: false}, nil
+	}
+
+	prefs := CloudPreferences{
+		ConfigureCloud: true,
+		Provider:       "googleai",
+		Model:          "googleai/gemini-2.5-flash",
+		APIKeyEnv:      "GEMINI_API_KEY",
+	}
+
+	providerSelect := huh.NewSelect[string]().
+		Title("Select cloud model provider:").
+		Options(
+			huh.NewOption("Google AI (Gemini 2.5 Flash / Pro)", "googleai"),
+			huh.NewOption("Anthropic (Claude 3.5 Sonnet / Haiku)", "anthropic"),
+			huh.NewOption("OpenAI (GPT-4o / GPT-4o-mini)", "openai"),
+		).
+		Value(&prefs.Provider)
+
+	modelInput := huh.NewInput().
+		Title("Cloud model identifier:").
+		Description("e.g. googleai/gemini-2.5-flash, anthropic/claude-3-5-sonnet, openai/gpt-4o").
+		Value(&prefs.Model)
+
+	apiKeyEnvInput := huh.NewInput().
+		Title("API key environment variable:").
+		Description("Name of the environment variable containing your API key:").
+		Value(&prefs.APIKeyEnv)
+
+	form := huh.NewForm(huh.NewGroup(providerSelect, modelInput, apiKeyEnvInput))
+	if err := form.Run(); err != nil {
+		return prefs, err
+	}
+
+	if strings.TrimSpace(prefs.APIKeyEnv) == "" {
+		switch prefs.Provider {
+		case "anthropic":
+			prefs.APIKeyEnv = "ANTHROPIC_API_KEY"
+		case "openai":
+			prefs.APIKeyEnv = "OPENAI_API_KEY"
+		default:
+			prefs.APIKeyEnv = "GEMINI_API_KEY"
+		}
+	}
+
+	return prefs, nil
+}
+
 // PromptInitSelection prompts the user to select a LiteRT-LM runtime version, on-device model, and acceleration backend.
 func PromptInitSelection(modelChoices ...ModelChoice) (InitPreferences, error) {
 	StopActiveSpinner()
@@ -140,7 +212,6 @@ func PromptInitSelection(modelChoices ...ModelChoice) (InitPreferences, error) {
 			huh.NewOption("Gemma 4 4B  [~2.6 GB] • Recommended (Balanced reasoning & speed)", "litert-community/gemma-4-E4B-it"),
 			huh.NewOption("Gemma 4 2B  [~1.6 GB] • Fast & lightweight on-device", "litert-community/gemma-4-E2B-it"),
 			huh.NewOption("Gemma 4 12B [~7.5 GB] • High capability reasoning & coding", "litert-community/gemma-4-12B-it"),
-			huh.NewOption("Gemma 3 1B  [~580 MB] • Ultra-compact on-device SLM", "litert-community/gemma3-1b-it-int4"),
 			huh.NewOption("Qwen 3 4B   [~2.5 GB] • Multilingual & strong tool calling", "litert-community/qwen3-4b-it"),
 		}
 	}

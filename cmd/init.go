@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/vladimirvivien/robo/internal/config"
@@ -110,6 +111,20 @@ func runInit(cmd *cobra.Command, args []string) error {
 		selectedVersion = prefs.Version
 		selectedModel = prefs.Model
 		selectedBackend = prefs.Backend
+
+		// Prompt for optional cloud model setup
+		cloudPrefs, err := ui.PromptCloudSelection()
+		if err != nil {
+			return fmt.Errorf("initialization cancelled: %w", err)
+		}
+		if cloudPrefs.ConfigureCloud {
+			cfg.LLM.Cloud.Enabled = true
+			cfg.LLM.Cloud.Provider = cloudPrefs.Provider
+			cfg.LLM.Cloud.Model = cloudPrefs.Model
+			cfg.LLM.Cloud.APIKeyEnv = cloudPrefs.APIKeyEnv
+		} else {
+			cfg.LLM.Cloud.Enabled = false
+		}
 	}
 
 	cfg.LLM.Local.Version = selectedVersion
@@ -143,14 +158,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if cfgFile != "" {
 			exampleCmd = fmt.Sprintf(`robo --config %s "which process is consuming the most cpu"`, targetConfigPath)
 		}
-		summary := fmt.Sprintf(
-			"• Config:   %s\n• Model:    %s\n• Runtime:  LiteRT-LM %s\n• Backend:  %s\n\nTry running:\n  %s",
-			targetConfigPath,
-			selectedModel,
-			cfg.LLM.Local.Version,
-			cfg.LLM.Local.Backend,
-			exampleCmd,
-		)
+
+		summaryLines := []string{
+			fmt.Sprintf("• Config:   %s", targetConfigPath),
+			fmt.Sprintf("• Local:    %s (LiteRT-LM %s, %s)", selectedModel, cfg.LLM.Local.Version, cfg.LLM.Local.Backend),
+		}
+		if cfg.LLM.Cloud.Enabled {
+			summaryLines = append(summaryLines, fmt.Sprintf("• Cloud:    %s (%s)", cfg.LLM.Cloud.Model, cfg.LLM.Cloud.APIKeyEnv))
+		}
+		summaryLines = append(summaryLines, fmt.Sprintf("\nTry running:\n  %s", exampleCmd))
+
+		summary := strings.Join(summaryLines, "\n")
 		fmt.Println(ui.Card(
 			ui.BadgeSuccess("🤖 robo • Initialization Complete"),
 			summary,
