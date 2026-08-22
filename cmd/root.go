@@ -7,7 +7,6 @@ import (
 	"log"
 	"log/slog"
 	"os"
-	"runtime"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -17,7 +16,6 @@ import (
 	"github.com/vladimirvivien/robo/internal/engine/cloud"
 	"github.com/vladimirvivien/robo/internal/engine/local"
 	"github.com/vladimirvivien/robo/internal/engine/router"
-	"github.com/vladimirvivien/robo/internal/shell"
 	"github.com/vladimirvivien/robo/internal/ui"
 )
 
@@ -29,6 +27,9 @@ var (
 	flagSystem         string
 	flagNoStream       bool
 	flagAutoAccept     bool
+	flagOneShot        bool
+	flagDryRun         bool
+	flagMaxSteps       int
 	flagYoloApproveAll bool
 )
 
@@ -67,7 +68,11 @@ func init() {
 	RootCmd.Flags().BoolVarP(&flagCloud, "cloud-only", "c", false, "force execution on cloud frontier model")
 	RootCmd.Flags().StringVar(&flagSystem, "system", "", "custom system prompt override")
 	RootCmd.Flags().BoolVar(&flagNoStream, "no-stream", false, "disable streaming output")
-	RootCmd.Flags().BoolVarP(&flagAutoAccept, "auto-accept", "y", false, "auto-accept all non-destructive actions without prompt")
+	RootCmd.Flags().BoolVarP(&flagAutoAccept, "yolo", "y", false, "auto-accept all non-destructive actions without prompt")
+	RootCmd.Flags().BoolVar(&flagAutoAccept, "auto-accept", false, "alias for --yolo")
+	RootCmd.Flags().BoolVarP(&flagOneShot, "one-shot", "1", false, "force strictly single-turn execution ($N=1$) without follow-up loop")
+	RootCmd.Flags().BoolVarP(&flagDryRun, "dry-run", "d", false, "simulate execution plan without host mutation")
+	RootCmd.Flags().IntVar(&flagMaxSteps, "max-steps", 5, "maximum number of agent completion steps")
 	RootCmd.Flags().BoolVar(&flagYoloApproveAll, "yolo-approve-all", false, "auto-accept and execute all actions including destructive ones (no prompts)")
 }
 
@@ -155,20 +160,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	// 5. Assemble ambient shell context and dynamic system prompt
-	var sc *shell.Context
-	if cfg.Shell.CaptureHistory {
-		collector := shell.NewCollector(nil)
-		maxLines := cfg.Shell.MaxHistoryLines
-		if maxLines <= 0 {
-			maxLines = 10
-		}
-		sc, _ = collector.Collect(ctx, maxLines)
-	}
-
-	systemPrompt := shell.BuildSystemPrompt(runtime.GOOS, runtime.GOARCH, shell.DetectShell(), flagSystem, sc)
-
-	// 6. Construct engines
+	// 5. Construct engines
 	inProcEngine := local.New(cfg.LLM.Local, cfg)
 	localClient := daemon.NewClient(*cfg, daemon.WithInProcEngine(inProcEngine))
 	var cloudEngine engine.Engine
@@ -179,68 +171,25 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	r := router.NewRouter(localClient, cloudEngine, cfg.LLM)
 	defer func() { _ = r.Close() }()
 
-	// 7. Build request
-	req := engine.Request{
-		Prompt:       prompt,
-		SystemPrompt: systemPrompt,
-	}
-
-	if stdinContent != "" {
-		req.ContextFiles = append(req.ContextFiles, engine.FileContext{
-			Path:    "stdin",
-			Content: stdinContent,
-		})
-	}
-
-	if flagLocal {
-		req.ForceBackend = "local-only"
-	} else if flagCloud {
-		req.ForceBackend = "cloud-only"
-	}
-
-	// 8. Execute generation
-	var fullText strings.Builder
-	var proposedToolCalls []engine.ToolCall
-
-	stream, err := r.GenerateStream(ctx, req)
-	if err != nil {
-		if sp != nil {
-			sp.Stop()
-		}
-		return err
-	}
-
-	for chunk := range stream {
-		if chunk.Error != nil {
-			if sp != nil {
-				sp.Stop()
-			}
-			fmt.Fprintf(os.Stderr, "\n[stream error]: %v\n", chunk.Error)
-			return chunk.Error
-		}
-		fullText.WriteString(chunk.Text)
-		if len(chunk.ToolCalls) > 0 {
-			proposedToolCalls = append(proposedToolCalls, chunk.ToolCalls...)
-		}
-	}
 	if sp != nil {
 		sp.Stop()
 	}
 
-	rawResponse := fullText.String()
-	cleaned := ui.CleanResponseText(rawResponse)
-	cmdStr := ""
-	explanation := ""
+	sessionConfig := engine.SessionConfig{
+		MaxSteps:           flagMaxSteps,
+		OneShot:            flagOneShot,
+		Yolo:               flagAutoAccept || flagYoloApproveAll,
+		DryRun:             flagDryRun,
+		OutputFormat:       outputFormat,
+		ForceBackend:       forceBackend,
+		CustomInstructions: flagSystem,
+		StdinContent:       stdinContent,
+	}
 
-	// Structured tool calls take precedence over heuristic markdown code blocks
-	if len(proposedToolCalls) > 0 {
-		cmdStr = proposedToolCalls[0].Command
-		explanation = proposedToolCalls[0].Description
-	} else {
-		cmdStr = shell.ExtractProposedCommand(cleaned)
-		if cmdStr == "" {
-			explanation = cleaned
-		}
+	runner := engine.NewSessionRunner(r, cfg, sessionConfig)
+	res, err := runner.Run(ctx, prompt)
+	if err != nil {
+		return err
 	}
 
 	usedLocal := flagLocal || (!flagCloud && cfg.LLM.Local.Enabled)
@@ -256,29 +205,34 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	lastCmd := ""
+	lastExplanation := ""
+	lastOut := res.FinalResponse
+	if len(res.Steps) > 0 {
+		lastCmd = res.Steps[len(res.Steps)-1].Command
+		lastExplanation = res.Steps[len(res.Steps)-1].Description
+		if res.FinalResponse == "" {
+			lastOut = res.Steps[len(res.Steps)-1].Output
+		}
+	}
+
 	outputData := ui.OutputData{
-		Response:    cleaned,
-		Explanation: explanation,
-		Command:     cmdStr,
-		Output:      cleaned,
+		Response:    res.FinalResponse,
+		Explanation: lastExplanation,
+		Command:     lastCmd,
+		Output:      lastOut,
 		Provider:    providerName,
 		Model:       modelName,
 		Local:       usedLocal,
 	}
 
-	// Render output
-	if err := formatter.Format(os.Stdout, outputData); err != nil {
-		return err
-	}
-
-	// In interactive mode, if a command was proposed, orchestrator executes interactive review
-	if isInteractive && cmdStr != "" {
-		toolHandler := shell.NewToolHandler(cfg)
-		_, _ = toolHandler.Handle(ctx, shell.ShellInput{
-			Prompt:      prompt,
-			Command:     cmdStr,
-			Description: explanation,
-		})
+	// For non-interactive or structured formats, format output cleanly
+	if !isInteractive || outputFormat == "json" || outputFormat == "code" || outputFormat == "plain" {
+		if err := formatter.Format(os.Stdout, outputData); err != nil {
+			return err
+		}
+	} else if res.FinalResponse != "" {
+		fmt.Println(res.FinalResponse)
 	}
 
 	return nil

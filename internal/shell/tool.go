@@ -20,9 +20,10 @@ type ShellInput struct {
 
 // ShellOutput represents the outcome of command execution.
 type ShellOutput struct {
-	Output   string `json:"output"`
-	ExitCode int    `json:"exit_code"`
-	Error    string `json:"error,omitempty"`
+	Output    string `json:"output"`
+	ExitCode  int    `json:"exit_code"`
+	Error     string `json:"error,omitempty"`
+	Cancelled bool   `json:"cancelled,omitempty"`
 }
 
 // ToolHandler handles interactive review and execution of shell commands proposed by models.
@@ -48,8 +49,8 @@ func recordExecution(prompt, cmd, desc, out string, exitCode int, err error) {
 		Output:      out,
 		Error:       errStr,
 		ExitCode:    exitCode,
-		Timestamp:   time.Now(),
 		Cwd:         cwd,
+		Timestamp:   time.Now(),
 	}
 	_ = SaveLastExecution(rec)
 
@@ -73,30 +74,17 @@ func (h *ToolHandler) Handle(ctx context.Context, in ShellInput) (ShellOutput, e
 	}
 	isInteractive := ui.IsStdoutTerminal() && (outputMode == "" || outputMode == "markdown" || outputMode == "md")
 
-	// If non-interactive (piped to jq, -o json, -o code, -o plain):
+	// If not interactive terminal or non-markdown output format, run without interactive prompt
 	if !isInteractive {
-		if h.cfg != nil && h.cfg.Shell.YoloApproveAll {
-			out, exitCode, err := ExecuteInActiveShellWithCapture(ctx, cmdStr, false)
-			recordExecution(in.Prompt, cmdStr, in.Description, out, exitCode, err)
-			if err != nil {
-				return ShellOutput{Output: out, Error: err.Error(), ExitCode: exitCode}, nil
-			}
-			return ShellOutput{Output: out, ExitCode: 0}, nil
+		out, exitCode, err := ExecuteInActiveShellWithCapture(ctx, cmdStr, false)
+		recordExecution(in.Prompt, cmdStr, in.Description, out, exitCode, err)
+		if err != nil {
+			return ShellOutput{Output: out, Error: err.Error(), ExitCode: exitCode}, nil
 		}
-
-		isDestructive, _ := IsDestructiveCommand(cmdStr)
-		if !isDestructive {
-			out, exitCode, err := ExecuteInActiveShellWithCapture(ctx, cmdStr, false)
-			recordExecution(in.Prompt, cmdStr, in.Description, out, exitCode, err)
-			if err != nil {
-				return ShellOutput{Output: out, Error: err.Error(), ExitCode: exitCode}, nil
-			}
-			return ShellOutput{Output: out, ExitCode: 0}, nil
-		}
-		return ShellOutput{Error: "destructive command requires interactive confirmation", ExitCode: 1}, nil
+		return ShellOutput{Output: out, ExitCode: 0}, nil
 	}
 
-	// Interactive mode: display proposed command card
+	// Display interactive proposed command card
 	fmt.Println()
 	title := "🤖 Proposed Shell Command"
 	desc := strings.TrimSpace(in.Description)
@@ -121,7 +109,7 @@ func (h *ToolHandler) Handle(ctx context.Context, in ShellInput) (ShellOutput, e
 		confirmed, err := ui.PromptDestructiveConfirm(warning, "yes-delete")
 		if err != nil || !confirmed {
 			fmt.Println(ui.BadgeWarning("Execution aborted: destructive confirmation not confirmed"))
-			return ShellOutput{ExitCode: 1}, nil
+			return ShellOutput{ExitCode: 1, Cancelled: true}, nil
 		}
 	} else if h.cfg != nil && h.cfg.Shell.AutoAccept {
 		// Auto-accept safe command
@@ -137,7 +125,7 @@ func (h *ToolHandler) Handle(ctx context.Context, in ShellInput) (ShellOutput, e
 	action, editedCmd, err := ui.PromptCommandReview(cmdStr)
 	if err != nil || action == ui.ActionCancel {
 		fmt.Println("Execution cancelled.")
-		return ShellOutput{ExitCode: 0}, nil
+		return ShellOutput{ExitCode: 0, Cancelled: true}, nil
 	}
 
 	out, exitCode, err := ExecuteInActiveShellWithCapture(ctx, editedCmd, true)
