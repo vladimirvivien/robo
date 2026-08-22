@@ -101,12 +101,12 @@ func (r *SessionRunner) Run(ctx context.Context, goal string) (*SessionResult, e
 
 	customInstructions := r.Settings.CustomInstructions
 
-	var trajectory []StepRecord
+	tm := NewTrajectoryManager()
 
 	for step := 1; step <= r.Settings.MaxSteps; step++ {
-		// 1. Build prompt for Turn N
+		// 1. Build prompt for Turn N with sliding-window compressed trajectory
 		sysPrompt := shell.BuildSystemPrompt(targetOS, targetArch, shellType, customInstructions, shellCtx)
-		stepPrompt := r.buildStepPrompt(goal, trajectory)
+		stepPrompt := tm.FormatPromptContext(goal)
 
 		req := Request{
 			Prompt:       stepPrompt,
@@ -161,8 +161,8 @@ func (r *SessionRunner) Run(ctx context.Context, goal string) (*SessionResult, e
 		if strings.TrimSpace(cmdStr) == "" {
 			result.FinalResponse = cleaned
 			result.Status = "completed"
-			result.TotalSteps = len(trajectory)
-			result.Steps = trajectory
+			result.TotalSteps = tm.Count()
+			result.Steps = tm.Steps()
 			return result, nil
 		}
 
@@ -176,7 +176,7 @@ func (r *SessionRunner) Run(ctx context.Context, goal string) (*SessionResult, e
 
 		if r.Settings.DryRun {
 			stepRec.Executed = false
-			trajectory = append(trajectory, stepRec)
+			tm.AddStep(stepRec)
 			if r.Settings.OneShot {
 				break
 			}
@@ -193,7 +193,7 @@ func (r *SessionRunner) Run(ctx context.Context, goal string) (*SessionResult, e
 		if err != nil {
 			stepRec.Error = err.Error()
 			stepRec.ExitCode = 1
-			trajectory = append(trajectory, stepRec)
+			tm.AddStep(stepRec)
 			if r.Settings.OneShot {
 				result.Status = "error"
 				break
@@ -204,14 +204,14 @@ func (r *SessionRunner) Run(ctx context.Context, goal string) (*SessionResult, e
 		if toolOut.Cancelled {
 			result.Status = "cancelled"
 			stepRec.Error = "user cancelled command execution"
-			trajectory = append(trajectory, stepRec)
+			tm.AddStep(stepRec)
 			break
 		}
 
 		stepRec.Output = toolOut.Output
 		stepRec.Error = toolOut.Error
 		stepRec.ExitCode = toolOut.ExitCode
-		trajectory = append(trajectory, stepRec)
+		tm.AddStep(stepRec)
 
 		// If OneShot mode, stop after first command execution
 		if r.Settings.OneShot {
@@ -219,58 +219,11 @@ func (r *SessionRunner) Run(ctx context.Context, goal string) (*SessionResult, e
 		}
 	}
 
-	result.TotalSteps = len(trajectory)
-	result.Steps = trajectory
-	if result.Status == "completed" && len(trajectory) >= r.Settings.MaxSteps && result.FinalResponse == "" {
+	result.TotalSteps = tm.Count()
+	result.Steps = tm.Steps()
+	if result.Status == "completed" && tm.Count() >= r.Settings.MaxSteps && result.FinalResponse == "" {
 		result.Status = "max_steps_reached"
 	}
 
 	return result, nil
-}
-
-func (r *SessionRunner) buildStepPrompt(goal string, trajectory []StepRecord) string {
-	if len(trajectory) == 0 {
-		return goal
-	}
-
-	var sb strings.Builder
-	sb.WriteString("User Goal: " + goal + "\n\n")
-	sb.WriteString("Session Execution History:\n")
-
-	for _, s := range trajectory {
-		fmt.Fprintf(&sb, "Step %d:\n", s.Step)
-		fmt.Fprintf(&sb, "  Command: %s\n", s.Command)
-		if s.Description != "" {
-			fmt.Fprintf(&sb, "  Intent: %s\n", s.Description)
-		}
-		if s.ExitCode == 0 {
-			fmt.Fprintf(&sb, "  Status: Succeeded (Exit Code 0)\n")
-		} else {
-			fmt.Fprintf(&sb, "  Status: Failed (Exit Code %d)\n", s.ExitCode)
-		}
-		if strings.TrimSpace(s.Output) != "" {
-			fmt.Fprintf(&sb, "  Output:\n%s\n", truncateText(s.Output, 20))
-		}
-		if strings.TrimSpace(s.Error) != "" {
-			fmt.Fprintf(&sb, "  Error:\n%s\n", truncateText(s.Error, 10))
-		}
-		sb.WriteString("\n")
-	}
-
-	sb.WriteString("Evaluate the progress toward the goal:\n")
-	sb.WriteString("- If another command is required, invoke \"execute_shell\" with the next specific command.\n")
-	sb.WriteString("- If the goal is satisfied, provide the final concise answer/summary directly in markdown without calling \"execute_shell\".\n")
-
-	return sb.String()
-}
-
-func truncateText(text string, maxLines int) string {
-	lines := strings.Split(strings.TrimSpace(text), "\n")
-	if len(lines) <= maxLines {
-		return strings.Join(lines, "\n")
-	}
-	half := maxLines / 2
-	head := lines[:half]
-	tail := lines[len(lines)-half:]
-	return fmt.Sprintf("%s\n... [%d lines omitted] ...\n%s", strings.Join(head, "\n"), len(lines)-maxLines, strings.Join(tail, "\n"))
 }
