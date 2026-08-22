@@ -243,10 +243,6 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if cmdStr != "" {
-		cmdStr = shell.NormalizeCommand(runtime.GOOS, shell.DetectShell(), cmdStr)
-	}
-
 	usedLocal := flagLocal || (!flagCloud && cfg.LLM.Local.Enabled)
 	providerName := cfg.LLM.Local.Provider
 	modelName := cfg.LLM.Local.Model

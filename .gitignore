@@ -6,6 +6,8 @@ bin/
 *.dylib
 *.log
 *.tmp
+*.profraw
+*.profdata
 *.exe~
 *~
 .DS_Store

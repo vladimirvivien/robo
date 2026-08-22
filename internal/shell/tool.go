@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"runtime"
 	"strings"
 	"time"
 
@@ -60,7 +59,7 @@ func recordExecution(prompt, cmd, desc, out string, exitCode int, err error) {
 
 // Handle executes the interactive command review and runs the command if approved.
 func (h *ToolHandler) Handle(ctx context.Context, in ShellInput) (ShellOutput, error) {
-	cmdStr := NormalizeCommand(runtime.GOOS, DetectShell(), in.Command)
+	cmdStr := in.Command
 	if cmdStr == "" {
 		return ShellOutput{Error: "empty command"}, nil
 	}
