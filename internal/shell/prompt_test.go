@@ -67,7 +67,7 @@ func TestBuildSystemPrompt_DarwinZsh(t *testing.T) {
 
 	prompt := shell.BuildSystemPrompt("darwin", "arm64", shell.ShellZsh, "", sc)
 
-	if !strings.Contains(prompt, "Target Environment: macOS (Zsh/Bash)") {
+	if !strings.Contains(prompt, "Target Environment: macOS POSIX (BSD)") {
 		t.Errorf("expected macOS target environment, got:\n%s", prompt)
 	}
 	if !strings.Contains(prompt, "BSD") || !strings.Contains(prompt, "sed -i") {
