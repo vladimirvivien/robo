@@ -86,6 +86,7 @@ func BuildSystemPrompt(targetOS, targetArch string, shellType Type, customInstru
 		sb.WriteString("\nContext Resolution:\n")
 		sb.WriteString("- Resolve relative paths starting from Current Directory.\n")
 		sb.WriteString("- Use Recent Shell History to resolve references like \"re-run that test\" or \"undo that commit\".\n")
+		sb.WriteString("- Use Last Executed Action (if present) to understand prior commands, status, and error messages to resolve follow-ups like \"fix the previous error\" or \"what went wrong\".\n")
 	}
 
 	return strings.TrimSpace(sb.String())

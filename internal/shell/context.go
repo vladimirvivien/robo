@@ -6,16 +6,18 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // Context encapsulates the developer's active terminal and shell history state.
 type Context struct {
-	OS             string   `json:"os"`
-	Arch           string   `json:"arch"`
-	Shell          Type     `json:"shell"`
-	Cwd            string   `json:"cwd"`
-	RecentCommands []string `json:"recent_commands,omitempty"`
-	LastCommand    string   `json:"last_command,omitempty"`
+	OS             string           `json:"os"`
+	Arch           string           `json:"arch"`
+	Shell          Type             `json:"shell"`
+	Cwd            string           `json:"cwd"`
+	RecentCommands []string         `json:"recent_commands,omitempty"`
+	LastCommand    string           `json:"last_command,omitempty"`
+	LastExecution  *ExecutionRecord `json:"last_execution,omitempty"`
 }
 
 // Collector inspects the runtime environment and gathers ambient context.
@@ -68,6 +70,13 @@ func (c *Collector) Collect(ctx context.Context, maxHistory int) (*Context, erro
 		sc.LastCommand = cmds[len(cmds)-1]
 	}
 
+	// Load last execution record from SQLite store if within recent threshold (< 24 hours)
+	if rec, err := LoadLastExecution(dir); err == nil && rec != nil {
+		if rec.Timestamp.IsZero() || time.Since(rec.Timestamp) < 24*time.Hour {
+			sc.LastExecution = rec
+		}
+	}
+
 	return sc, nil
 }
 
@@ -104,5 +113,30 @@ func (c *Context) FormatPromptContext() string {
 			}
 		}
 	}
+
+	if c.LastExecution != nil && c.LastExecution.Command != "" {
+		sb.WriteString("\nLast Executed Action:\n")
+		if c.LastExecution.Prompt != "" {
+			fmt.Fprintf(&sb, "  User Intent: %s\n", c.LastExecution.Prompt)
+		}
+		fmt.Fprintf(&sb, "  Command: %s\n", c.LastExecution.Command)
+		if c.LastExecution.ExitCode != 0 {
+			fmt.Fprintf(&sb, "  Status: Failed (Exit Code %d)\n", c.LastExecution.ExitCode)
+		} else {
+			sb.WriteString("  Status: Succeeded (Exit Code 0)\n")
+		}
+		outText := strings.TrimSpace(c.LastExecution.Output)
+		if outText == "" {
+			outText = strings.TrimSpace(c.LastExecution.Error)
+		}
+		if outText != "" {
+			lines := strings.Split(outText, "\n")
+			if len(lines) > 5 {
+				lines = lines[:5]
+			}
+			fmt.Fprintf(&sb, "  Output/Error: %s\n", strings.Join(lines, "\n    "))
+		}
+	}
+
 	return sb.String()
 }

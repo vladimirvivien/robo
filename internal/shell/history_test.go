@@ -158,3 +158,25 @@ func TestHistoryReader_FileRead(t *testing.T) {
 		t.Errorf("unexpected read file commands: %+v", cmds)
 	}
 }
+
+func TestHistoryReader_AppendCommand(t *testing.T) {
+	dir := t.TempDir()
+	histFile := filepath.Join(dir, "custom_history")
+	hr := shell.NewHistoryReader(shell.ShellBash).WithCustomPath(histFile)
+
+	if err := hr.AppendCommand("git status"); err != nil {
+		t.Fatalf("AppendCommand failed: %v", err)
+	}
+	if err := hr.AppendCommand("go build"); err != nil {
+		t.Fatalf("AppendCommand failed: %v", err)
+	}
+
+	cmds, err := hr.ReadLastCommands(5)
+	if err != nil {
+		t.Fatalf("ReadLastCommands failed: %v", err)
+	}
+
+	if len(cmds) != 2 || cmds[0] != "git status" || cmds[1] != "go build" {
+		t.Errorf("unexpected appended commands: %+v", cmds)
+	}
+}

@@ -1,135 +1,141 @@
 # 🤖 robo
 
-An AI assistant designed for the shell in your terminal.
+An on-device AI system assistant for the terminal.
 
-`robo` uses an on-device small language model (SLM) along with cloud frontier models to generate shell commands from natural-language prompts, explain terminal diagnostics, and execute tasks directly in your active shell using your recent command history as context.
+`robo` runs quantized Small Language Models (SLMs) locally on your hardware using LiteRT-LM to generate platform-specific shell commands, analyze terminal diagnostics, and automate developer workflows directly in your active shell.
 
 ---
 
 ## Key Capabilities
 
-* **Dual-Engine Architecture:** Runs quantized models locally via `litertlm-go` (Gemma 4 E4B) for private, zero-latency inference, and connects to cloud frontier models (Google Gemini, Anthropic Claude, OpenAI, Ollama) via native REST clients.
-* **Explicit Setup (`robo init`):** Walks through model selection (Gemma 4 2B to 12B) and hardware acceleration configuration, provisioning LiteRT-LM runtime v0.16.0 dependencies.
-* **Ambient Shell Context:** Automatically reads your active OS, shell environment (Bash, Zsh, Fish, PowerShell), current working directory, and recent shell command history to contextualize prompts without manual re-typing.
-* **Hot-Start Daemon (`robod`):** Hosts the local model in memory for sub-50ms response latency, auto-spawns on demand, and shuts down after 15 minutes of inactivity.
-* **Intelligent Routing:** Automatically chooses between local and cloud engines based on prompt complexity, token count (> 4K tokens), and failure escalation.
-* **Integrated Command Synthesis & Execution:** Translates natural language into commands with interactive review (`[Run] [Edit] [Cancel]`) and typed confirmation guards (`yes-delete`) for destructive operations.
-* **Unix Shell Composability:** Automatically formats for human viewing in interactive TTYs, while emitting raw unformatted streams when piped to downstream tools.
+* **On-Device Local Inference:** Runs quantized models locally via LiteRT-LM (Gemma 4 2B to 12B) with hardware acceleration (GPU / WebGPU / CPU) for private, offline execution.
+* **Self-Contained Asset Management (`~/.robo`):** Manages configuration, model weights, native runtime libraries, and logs directly under a single root directory.
+* **Dynamic Platform Dialect Prompting:** Automatically detects your OS and active shell (PowerShell, Bash, Zsh, Fish) and constructs compact, token-efficient system prompts tailored specifically to your target environment.
+* **Ambient Shell History Awareness:** Ingests recent terminal command history to contextualize requests without manual copy-pasting.
+* **Background Daemon (`robod`):** Keeps local models resident in memory for fast execution, automatically starting on demand and shutting down after inactivity.
+* **Hybrid Cloud Option:** Configurable optional routing to cloud frontier models (Gemini, Claude, OpenAI) for high-token or multimodal tasks.
+* **Interactive Safety & Execution:** Generates executable commands with an interactive menu (`[Run]`, `[Edit]`, `[Cancel]`) and safety classification for destructive operations.
 
 ---
 
 ## Installation & Build
 
 ### Prerequisites
-* Go 1.24+ (or Go 1.26+)
-* Make
+* Go 1.24+
+* Git / jj
 
 ### Build from Source
 ```bash
-# Build size-optimized binary (stripped with -s -w -trimpath)
-make build
+# Clone the repository
+git clone https://github.com/vladimirvivien/robo.git
+cd robo
 
-# Output binary is located at bin/robo (or bin/robo.exe on Windows)
+# Build the binary
+go build -o bin/robo .
+
+# Verify installation
 ./bin/robo version
 ```
+
 ---
 
-## Quickstart Walkthrough
+## Quickstart
 
-### 1. Initialize Robo (`robo init`)
-Before running prompts, initialize Robo to configure your local on-device model and download LiteRT-LM runtime dependencies:
-
-```bash
-# Launch interactive setup wizard (Select Gemma 4 2B..12B model and GPU/CPU backend)
-robo init
-
-# Or run non-interactively with defaults (Gemma 4 4B + GPU)
-robo init -y
-```
-
-This creates `~/.robo/config.yaml` and downloads the selected model weights to your local cache.
-
-#### Customizing Cloud Models
-You can configure a cloud model by editing `~/.robo/config.yaml`:
-
-```yaml
-llm:
-  cloud:
-    provider: "googleai"              # "googleai", "anthropic", "openai", or "ollama"
-    model: "googleai/gemini-2.5-flash"
-```
----
-
-### 2. Command Synthesis & Interactive Execution
-Ask Robo to accomplish any task in natural language. Robo synthesizes the command tailored to your active OS and shell:
+### 1. Initialize and Download Local Model
+Run the setup wizard to select your local model and hardware backend:
 
 ```bash
-robo "find all files modified in the last 24 hours over 100MB"
+# Interactive setup wizard
+./bin/robo init
+
+# Or initialize non-interactively with defaults (Gemma 4 2B + GPU)
+./bin/robo init -y
 ```
 
-Robo displays the proposed command in an interactive card:
-* `[Run]` — Executes the command immediately in your active shell.
-* `[Edit]` — Opens the command in your line editor.
-* `[Cancel]` — Aborts execution.
-
-For potentially destructive commands (`rm -rf`, `DROP TABLE`, `kill -9`), Robo requires typing confirmation (`yes-delete`) before running.
-
-#### Auto-Accept Execution
+You can also fetch models or runtime libraries directly using `robo get`:
 ```bash
-# Auto-run safe, non-destructive commands without prompt
-robo -y "list listening tcp ports"
+# Download a specific model asset to ~/.robo/cache
+./bin/robo get --model litert-community/gemma-4-E2B-it
 
-# Force local-only execution
-robo -l "extract all .tar.gz archives in current directory"
+# Download specific LiteRT-LM native runtime libraries to ~/.robo/lib
+./bin/robo get --litertlm-lib v0.16.0
+```
 
-# Force cloud-only execution for large-context tasks
-robo -c "Review this docker-compose configuration"
+### 2. Run Your First Query
+Ask `robo` to perform a task in natural language:
+
+```bash
+./bin/robo "what is the process using the most CPU"
+```
+
+`robo` synthesizes the exact platform-specific command and presents an interactive menu:
+```text
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ 🤖 Proposed Shell Command                                                    │
+│                                                                              │
+│    Get-Process | Sort-Object CPU -Descending | Select-Object -First 5        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+┃ Execute command?
+┃ > Run command
+┃   Edit command
+┃   Cancel
 ```
 
 ---
 
-### 3. Piped Input & Shell Diagnostics
-Pipe file contents, logs, or command errors directly into Robo:
+## Common Use Cases & Examples
+
+### 1. System & Resource Inspection
+Inspect hardware, memory, or processes using native platform tools:
 
 ```bash
-# Analyze test failures
-go test ./... 2>&1 | robo "why did these tests fail and how do i fix them?"
+# Query top resource consumers
+robo "find the top 3 processes using the most memory"
 
-# Explain a source file
-cat main.go | robo "summarize the entrypoint logic"
+# Sample system metrics over an interval
+robo "wait 3 seconds and show me active network listening ports"
+```
 
-# Format output as raw code or JSON for scripting
-robo "Generate a JSON schema for a user profile" -o json
+### 2. File Search & Batch Manipulation
+Synthesize file searches and batch operations tailored to your shell:
+
+```bash
+# Search for files by extension and modification date
+robo "find all .log files modified today and compress them into logs.zip"
+
+# Search code repositories
+robo "find all go files containing the word HandleStream"
+```
+
+### 3. Git & Developer Workflows with Ambient Context
+`robo` reads your recent terminal command history to resolve contextual questions:
+
+```bash
+# Example: You run a command that encounters an issue
+git push origin main
+# To github.com:user/repo.git
+# ! [rejected]        main -> main (fetch first)
+
+# Ask robo to resolve it using context:
+robo "how do i safely integrate remote changes without losing my work?"
 ```
 
 ---
 
-### 4. Ambient Shell History Context
-Robo automatically inspects your recent command history to understand context. For example, if you just ran a failing build or git command:
+## Unix Pipeline & Stream Composability
+
+`robo` automatically detects whether `stdout` is connected to an interactive terminal or a pipeline:
 
 ```bash
-# After running a failing command:
-cargo build
-# error: could not find `Cargo.toml` in `/home/user/project`
+# Extract raw output for scripting (-o json / -o code / -o plain)
+robo "generate a json schema for a user profile" -o json | jq .
 
-# Robo automatically knows what command you just ran:
-robo "how do i fix that error?"
-```
+# Pipe diagnostics or file contents into robo
+go test ./... 2>&1 | robo "why did this test fail and how do i fix it?"
 
----
-
-### 5. Daemon Management (`robo daemon`)
-`robod` launches automatically in the background when needed, but can also be controlled manually:
-
-```bash
-# Check daemon status and model load state
-robo daemon status
-
-# Start daemon explicitly
-robo daemon start
-
-# Stop background daemon and free memory
-robo daemon stop
+# Automatically execute non-destructive commands without interactive prompts (-y)
+robo -y "show total disk usage in current directory"
 ```
 
 ---
@@ -138,17 +144,35 @@ robo daemon stop
 
 | Command | Shorthand / Flags | Description |
 |---|---|---|
-| `robo init` | `-y`, `--model <name>`, `--backend <gpu\|cpu>`, `--force` | Initialize config, models, and LiteRT-LM runtime. |
-| `robo [intent]` | `-y`, `-l`, `-c`, `-o <format>` | Synthesize and execute shell commands or answer terminal queries. |
+| `robo init` | `-y`, `--model <name>`, `--backend <gpu\|cpu>`, `--force` | Interactive setup wizard for models and runtime libraries. |
+| `robo get` | `--model <name>`, `--litertlm-lib <version>`, `--no-ui` | Download model weights and native libraries directly to `~/.robo`. |
+| `robo [prompt]` | `-y`, `-l`, `-c`, `-o <format>`, `--system <prompt>` | Synthesize and execute shell commands from natural language. |
 | `robo daemon` | `start`, `stop`, `status` | Manage the background `robod` model server. |
-| `robo version` | `-o json`, `-o plain` | Print build version, commit SHA, and platform information. |
+| `robo version` | `-o json`, `-o plain` | Display version, commit SHA, and platform information. |
 
 ### Global Flags
 * `-y`, `--auto-accept` — Automatically execute safe, non-destructive commands without prompting.
-* `--yolo-approve-all` — Auto-accept and execute all commands including destructive ones.
-* `-l`, `--local-only` — Force execution on local on-device SLM.
-* `-c`, `--cloud-only` — Force execution on cloud frontier model.
-* `-o`, `--output <format>` — Global output format (`markdown`, `plain`, `json`, `code`).
+* `--yolo-approve-all` — Auto-accept and execute all commands, including destructive operations.
+* `-l`, `--local` — Force execution on the local on-device SLM.
+* `-c`, `--cloud` — Force execution on the cloud model.
+* `-o`, `--output <format>` — Output format (`markdown`, `plain`, `json`, `code`).
+* `--system <prompt>` — Custom system instruction override.
+
+---
+
+## Directory Structure
+
+`robo` maintains all runtime state under `~/.robo`:
+
+```text
+~/.robo/
+├── config.yaml          # Active configuration
+├── robo.db              # SQLite execution history and contextual diagnostics
+├── robod.json           # Daemon PID and loopback state
+├── robod.log            # Background daemon logs and runtime diagnostics
+├── cache/               # Local model weights (*.litertlm)
+└── lib/                 # Native LiteRT-LM runtime binaries (v0.16.0/)
+```
 
 ---
 

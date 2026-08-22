@@ -275,6 +275,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	if isInteractive && cmdStr != "" {
 		toolHandler := shell.NewToolHandler(cfg)
 		_, _ = toolHandler.Handle(ctx, shell.ShellInput{
+			Prompt:      prompt,
 			Command:     cmdStr,
 			Description: explanation,
 		})

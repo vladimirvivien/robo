@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vladimirvivien/robo/internal/shell"
 )
@@ -80,5 +81,47 @@ func TestCollector_FiltersSelfReferentialRoboCommands(t *testing.T) {
 		if strings.Contains(formatted, filtered) {
 			t.Errorf("expected %q to be filtered out, got:\n%s", filtered, formatted)
 		}
+	}
+}
+
+func TestCollector_FormatsLastExecution(t *testing.T) {
+	dir := t.TempDir()
+	rec := shell.ExecutionRecord{
+		Prompt:    "add .ssh/id_ed25519 to my ssh keychain",
+		Command:   "ssh-add ~/.ssh/id_ed25519",
+		Output:    "Could not open a connection to your authentication agent.",
+		ExitCode:  2,
+		Timestamp: time.Now(),
+		Cwd:       dir,
+	}
+	_ = rec
+
+	sc := &shell.Context{
+		OS:    "linux",
+		Arch:  "amd64",
+		Shell: shell.ShellBash,
+		Cwd:   dir,
+		LastExecution: &shell.ExecutionRecord{
+			Prompt:   "add .ssh/id_ed25519 to my ssh keychain",
+			Command:  "ssh-add ~/.ssh/id_ed25519",
+			Output:   "Could not open a connection to your authentication agent.",
+			ExitCode: 2,
+			Cwd:      dir,
+		},
+	}
+
+	formatted := sc.FormatPromptContext()
+
+	if !strings.Contains(formatted, "Last Executed Action:") {
+		t.Errorf("expected 'Last Executed Action:' in prompt context, got:\n%s", formatted)
+	}
+	if !strings.Contains(formatted, "ssh-add ~/.ssh/id_ed25519") {
+		t.Errorf("expected command in prompt context, got:\n%s", formatted)
+	}
+	if !strings.Contains(formatted, "Status: Failed (Exit Code 2)") {
+		t.Errorf("expected failure exit code in prompt context, got:\n%s", formatted)
+	}
+	if !strings.Contains(formatted, "Could not open a connection to your authentication agent.") {
+		t.Errorf("expected error output in prompt context, got:\n%s", formatted)
 	}
 }

@@ -2,12 +2,14 @@ package shell
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // HistoryReader locates and parses shell history from the filesystem.
@@ -97,6 +99,33 @@ func (hr *HistoryReader) ReadLastCommands(limit int) ([]string, error) {
 	defer func() { _ = f.Close() }()
 
 	return hr.ParseHistory(f, limit)
+}
+
+// AppendCommand appends an executed command string to the active shell's history file.
+func (hr *HistoryReader) AppendCommand(cmd string) error {
+	cmd = strings.TrimSpace(cmd)
+	if cmd == "" {
+		return nil
+	}
+	path := hr.DefaultHistoryPath()
+	if path == "" {
+		return nil
+	}
+	_ = os.MkdirAll(filepath.Dir(path), 0750)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+
+	switch hr.shellType {
+	case ShellFish:
+		entry := fmt.Sprintf("- cmd: %s\n  when: %d\n", cmd, time.Now().Unix())
+		_, err = f.WriteString(entry)
+	default:
+		_, err = fmt.Fprintf(f, "%s\n", cmd)
+	}
+	return err
 }
 
 // ParseHistory parses command lines from a history stream.
