@@ -25,13 +25,15 @@ type SessionConfig struct {
 
 // StepRecord records the trajectory of an individual step within a session.
 type StepRecord struct {
-	Step        int    `json:"step"`
-	Command     string `json:"command,omitempty"`
-	Description string `json:"description,omitempty"`
-	Output      string `json:"output,omitempty"`
-	Error       string `json:"error,omitempty"`
-	ExitCode    int    `json:"exit_code"`
-	Executed    bool   `json:"executed"`
+	Step        int     `json:"step"`
+	Command     string  `json:"command,omitempty"`
+	Description string  `json:"description,omitempty"`
+	Output      string  `json:"output,omitempty"`
+	Error       string  `json:"error,omitempty"`
+	ExitCode    int     `json:"exit_code"`
+	Executed    bool    `json:"executed"`
+	RiskTier    string  `json:"risk_tier,omitempty"`
+	RiskScore   float64 `json:"risk_score,omitempty"`
 }
 
 // SessionResult contains the complete summary and trajectory of an agent completion session.
@@ -167,11 +169,21 @@ func (r *SessionRunner) Run(ctx context.Context, goal string) (*SessionResult, e
 		}
 
 		// 4. Handle Step Execution
+		var modelRisk string
+		var isDestructive bool
+		if len(proposedToolCalls) > 0 {
+			modelRisk = proposedToolCalls[0].Risk
+			isDestructive = proposedToolCalls[0].IsDestructive
+		}
+		assess := shell.EvaluateCombinedRisk(cmdStr, modelRisk, isDestructive)
+
 		stepRec := StepRecord{
 			Step:        step,
 			Command:     cmdStr,
 			Description: explanation,
 			Executed:    !r.Settings.DryRun,
+			RiskTier:    string(assess.Tier),
+			RiskScore:   assess.Score,
 		}
 
 		if r.Settings.DryRun {
@@ -186,9 +198,11 @@ func (r *SessionRunner) Run(ctx context.Context, goal string) (*SessionResult, e
 		// Interactive or Unattended Execution
 		toolHandler := shell.NewToolHandler(r.Config)
 		toolOut, err := toolHandler.Handle(ctx, shell.ShellInput{
-			Prompt:      goal,
-			Command:     cmdStr,
-			Description: explanation,
+			Prompt:        goal,
+			Command:       cmdStr,
+			Description:   explanation,
+			Risk:          modelRisk,
+			IsDestructive: isDestructive,
 		})
 		if err != nil {
 			stepRec.Error = err.Error()
@@ -199,6 +213,11 @@ func (r *SessionRunner) Run(ctx context.Context, goal string) (*SessionResult, e
 				break
 			}
 			continue
+		}
+
+		if toolOut.Tier != "" {
+			stepRec.RiskTier = string(toolOut.Tier)
+			stepRec.RiskScore = toolOut.RiskScore
 		}
 
 		if toolOut.Cancelled {

@@ -106,6 +106,45 @@ func BadgeError(text string) string {
 	return styleErrorBadge.Render(text)
 }
 
+// BadgeReadOnly renders a styled badge for safe read-only queries.
+func BadgeReadOnly(text string) string {
+	if text == "" {
+		text = "Tier 1: Read-Only"
+	}
+	return lipgloss.NewStyle().
+		Bold(true).
+		Foreground(colorSalt).
+		Background(colorMalibu).
+		Padding(0, 1).
+		Render(text)
+}
+
+// BadgeMutating renders a styled badge for state-modifying actions.
+func BadgeMutating(text string) string {
+	if text == "" {
+		text = "Tier 2: Mutating"
+	}
+	return lipgloss.NewStyle().
+		Bold(true).
+		Foreground(colorPepper).
+		Background(colorMustard).
+		Padding(0, 1).
+		Render(text)
+}
+
+// BadgeDestructive renders a styled badge for high-risk destructive actions.
+func BadgeDestructive(text string) string {
+	if text == "" {
+		text = "Tier 3: Destructive"
+	}
+	return lipgloss.NewStyle().
+		Bold(true).
+		Foreground(colorSalt).
+		Background(colorSriracha).
+		Padding(0, 1).
+		Render(text)
+}
+
 // Card wraps content in a styled rounded border box with automatic width bounding.
 func Card(title, content, footer string) string {
 	return CardWithWidth(title, content, footer, CappedWidth(0))
@@ -151,20 +190,52 @@ func CommandCard(title, command string) string {
 
 // CommandCardWithWidth formats a proposed shell command with review framing and explicit width bounding.
 func CommandCardWithWidth(title, command string, width int) string {
+	return RiskCommandCardWithWidth(title, command, "read-only", "", width)
+}
+
+// RiskCommandCard formats a proposed command with border and badges matching its risk tier.
+func RiskCommandCard(title, command string, tier string, warning string) string {
+	return RiskCommandCardWithWidth(title, command, tier, warning, CappedWidth(0))
+}
+
+// RiskCommandCardWithWidth formats a proposed command with explicit width and risk styling.
+func RiskCommandCardWithWidth(title, command string, tier string, warning string, width int) string {
 	if width <= 0 {
 		width = CappedWidth(0)
 	}
 	contentWidth := max(width-4, 30)
 
+	borderColor := colorCharple
+	titleColor := colorDolly
+	badge := BadgeReadOnly("")
+
+	switch strings.ToLower(tier) {
+	case "destructive", "tier-3":
+		borderColor = colorSriracha
+		titleColor = colorSriracha
+		badge = BadgeDestructive("")
+	case "mutating", "tier-2":
+		borderColor = colorMustard
+		titleColor = colorMustard
+		badge = BadgeMutating("")
+	}
+
 	var sb strings.Builder
 	if title == "" {
 		title = "🤖 Proposed Shell Command"
 	}
-	sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(colorDolly).Render(title))
+
+	sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(titleColor).Render(title))
+	if badge != "" {
+		sb.WriteString("  " + badge)
+	}
+	if warning != "" {
+		sb.WriteString("\n\n  " + lipgloss.NewStyle().Bold(true).Foreground(colorSriracha).Render("⚠️  "+warning))
+	}
 	sb.WriteString("\n\n  ")
 	sb.WriteString(styleCommand.Render(command))
 
-	cardStyle := styleCard.Width(contentWidth)
+	cardStyle := styleCard.Width(contentWidth).BorderForeground(borderColor)
 	return cardStyle.Render(sb.String())
 }
 
