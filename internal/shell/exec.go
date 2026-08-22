@@ -75,6 +75,13 @@ func ExecuteInActiveShellWithCapture(ctx context.Context, cmdStr string, isInter
 			shellBin = "pwsh"
 		}
 		cmd = exec.CommandContext(ctx, shellBin, "-NoProfile", "-Command", cmdStr)
+	case ShellFish:
+		// Non-POSIX fish shell drops down to bash/sh for standard POSIX command execution
+		shellBin := "bash"
+		if _, err := exec.LookPath("bash"); err != nil {
+			shellBin = "/bin/sh"
+		}
+		cmd = exec.CommandContext(ctx, shellBin, "-c", cmdStr)
 	default:
 		shellBin := os.Getenv("SHELL")
 		if shellBin == "" {

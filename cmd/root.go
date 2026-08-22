@@ -155,32 +155,18 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	// 5. Assemble ambient shell context (OS, Architecture, active shell, and recent shell history)
-	var systemPrompt strings.Builder
-	systemPrompt.WriteString(config.DefaultRoboSystemPrompt)
-	systemPrompt.WriteString("\n\n")
-
-	// Inject OS / Architecture / Shell environment target
-	fmt.Fprintf(&systemPrompt, "[Runtime Target]\nOS: %s\nArchitecture: %s\nActive Shell: %s\n\n", runtime.GOOS, runtime.GOARCH, shell.DetectShell())
-
-	if flagSystem != "" {
-		systemPrompt.WriteString("User Instructions:\n")
-		systemPrompt.WriteString(flagSystem)
-		systemPrompt.WriteString("\n\n")
-	}
-
+	// 5. Assemble ambient shell context and dynamic system prompt
+	var sc *shell.Context
 	if cfg.Shell.CaptureHistory {
 		collector := shell.NewCollector(nil)
 		maxLines := cfg.Shell.MaxHistoryLines
 		if maxLines <= 0 {
 			maxLines = 10
 		}
-		sc, err := collector.Collect(ctx, maxLines)
-		if err == nil && sc != nil {
-			systemPrompt.WriteString(sc.FormatPromptContext())
-			systemPrompt.WriteString("\n")
-		}
+		sc, _ = collector.Collect(ctx, maxLines)
 	}
+
+	systemPrompt := shell.BuildSystemPrompt(runtime.GOOS, runtime.GOARCH, shell.DetectShell(), flagSystem, sc)
 
 	// 6. Construct engines
 	inProcEngine := local.New(cfg.LLM.Local, cfg)
@@ -196,7 +182,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	// 7. Build request
 	req := engine.Request{
 		Prompt:       prompt,
-		SystemPrompt: systemPrompt.String(),
+		SystemPrompt: systemPrompt,
 	}
 
 	if stdinContent != "" {
