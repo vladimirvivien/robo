@@ -87,19 +87,15 @@ func (e *Engine) Client(ctx context.Context) (*litertlm.Client, error) {
 	if e.cfg.Backend != "" {
 		opts = append(opts, litertlm.WithBackend(e.cfg.Backend))
 	}
-	if e.cfg.CacheDir != "" || modelPath != "" {
-		var modelCacheDir string
-		if e.cfg.CacheDir != "" {
-			modelCacheDir = filepath.Join(e.cfg.CacheDir, filepath.Base(modelPath))
-		} else if modelPath != "" {
-			modelCacheDir = filepath.Dir(modelPath)
+	cacheDir := e.cfg.CacheDir
+	if cacheDir == "" && modelPath != "" {
+		cacheDir = filepath.Dir(modelPath)
+	}
+	if cacheDir != "" {
+		if err := os.MkdirAll(cacheDir, 0750); err != nil {
+			return nil, fmt.Errorf("local: create cache dir: %w", err)
 		}
-		if modelCacheDir != "" {
-			if err := os.MkdirAll(modelCacheDir, 0750); err != nil {
-				return nil, fmt.Errorf("local: create cache dir: %w", err)
-			}
-			opts = append(opts, litertlm.WithCacheDir(modelCacheDir))
-		}
+		opts = append(opts, litertlm.WithCacheDir(cacheDir))
 	}
 
 	client, err := litertlm.New(ctx, opts...)

@@ -35,6 +35,10 @@ func NewRouter(local engine.Engine, cloud engine.Engine, cfg config.LLMConfig) *
 		cfg.MaxLocalTokens = 4096
 	}
 
+	if !cfg.Cloud.Enabled {
+		cloud = nil
+	}
+
 	return &Router{
 		local: local,
 		cloud: cloud,
@@ -61,13 +65,10 @@ func (r *Router) DecideRoute(req engine.Request) (Strategy, string) {
 	if !r.cfg.Local.Enabled && r.cfg.Cloud.Enabled {
 		return StrategyCloudOnly, "configuration: local model is disabled"
 	}
-	if r.cfg.Local.Enabled && !r.cfg.Cloud.Enabled {
+	if !r.cfg.Cloud.Enabled {
 		return StrategyLocalOnly, "configuration: cloud model is disabled"
 	}
 	if !r.cfg.Local.Enabled && !r.cfg.Cloud.Enabled {
-		if r.cfg.AutoRoute {
-			return StrategyAuto, "configuration: automatic routing"
-		}
 		return StrategyLocalOnly, "configuration: local default"
 	}
 
@@ -96,20 +97,13 @@ func (r *Router) Generate(ctx context.Context, req engine.Request) (*engine.Resp
 	switch strategy {
 	case StrategyLocalOnly:
 		if r.local == nil {
-			if r.cloud != nil {
-				return r.cloud.Generate(ctx, req)
-			}
 			return nil, errors.New("router: local engine is not available")
 		}
-		resp, err := r.local.Generate(ctx, req)
-		if err != nil && r.cloud != nil {
-			return r.cloud.Generate(ctx, req)
-		}
-		return resp, err
+		return r.local.Generate(ctx, req)
 
 	case StrategyCloudOnly:
-		if r.cloud == nil {
-			return nil, errors.New("router: cloud engine is not available")
+		if r.cloud == nil || !r.cfg.Cloud.Enabled {
+			return nil, errors.New("router: cloud engine is not available or disabled")
 		}
 		return r.cloud.Generate(ctx, req)
 
@@ -119,24 +113,24 @@ func (r *Router) Generate(ctx context.Context, req engine.Request) (*engine.Resp
 		if r.local != nil {
 			resp, err := r.local.Generate(ctx, req)
 			if err == nil {
-				// If local model actively signals that task exceeds local capacity, delegate to cloud
-				if strings.HasPrefix(strings.TrimSpace(resp.Text), EscalateToCloudSignal) && r.cloud != nil {
+				// If local model actively signals that task exceeds local capacity, delegate to cloud if enabled
+				if strings.HasPrefix(strings.TrimSpace(resp.Text), EscalateToCloudSignal) && r.cloud != nil && r.cfg.Cloud.Enabled {
 					return r.cloud.Generate(ctx, req)
 				}
 				return resp, nil
 			}
-			if r.cloud == nil {
+			if r.cloud == nil || !r.cfg.Cloud.Enabled {
 				return nil, err
 			}
-			// Attempt cloud fallback on error
+			// Attempt cloud fallback on error if cloud is enabled
 			cloudResp, cloudErr := r.cloud.Generate(ctx, req)
 			if cloudErr == nil {
 				return cloudResp, nil
 			}
 			return nil, fmt.Errorf("local execution failed (%w); cloud fallback also failed: %v", err, cloudErr)
 		}
-		if r.cloud == nil {
-			return nil, errors.New("router: fallback cloud engine is not available")
+		if r.cloud == nil || !r.cfg.Cloud.Enabled {
+			return nil, errors.New("router: no active engine available")
 		}
 		return r.cloud.Generate(ctx, req)
 	}
@@ -149,47 +143,46 @@ func (r *Router) GenerateStream(ctx context.Context, req engine.Request) (<-chan
 	switch strategy {
 	case StrategyLocalOnly:
 		if r.local == nil {
-			if r.cloud != nil {
-				return r.cloud.GenerateStream(ctx, req)
-			}
 			return nil, errors.New("router: local engine is not available")
 		}
 		stream, err := r.local.GenerateStream(ctx, req)
-		if err != nil && r.cloud != nil {
-			return r.cloud.GenerateStream(ctx, req)
-		}
 		if err != nil {
 			return nil, err
 		}
-		return r.forwardWithEscalation(ctx, stream, r.cloud, req)
+		return r.forwardWithEscalation(ctx, stream, nil, req)
 
 	case StrategyCloudOnly:
-		if r.cloud == nil {
-			return nil, errors.New("router: cloud engine is not available")
+		if r.cloud == nil || !r.cfg.Cloud.Enabled {
+			return nil, errors.New("router: cloud engine is not available or disabled")
 		}
 		return r.cloud.GenerateStream(ctx, req)
 
 	case StrategyAuto:
 		fallthrough
 	default:
+		var fallbackEngine engine.Engine
+		if r.cfg.Cloud.Enabled {
+			fallbackEngine = r.cloud
+		}
+
 		if r.local != nil {
 			stream, err := r.local.GenerateStream(ctx, req)
 			if err == nil {
-				return r.forwardWithEscalation(ctx, stream, r.cloud, req)
+				return r.forwardWithEscalation(ctx, stream, fallbackEngine, req)
 			}
-			if r.cloud == nil {
+			if fallbackEngine == nil {
 				return nil, err
 			}
-			cloudStream, cloudErr := r.cloud.GenerateStream(ctx, req)
+			cloudStream, cloudErr := fallbackEngine.GenerateStream(ctx, req)
 			if cloudErr == nil {
 				return cloudStream, nil
 			}
 			return nil, fmt.Errorf("local engine failed (%w); cloud fallback also failed: %v", err, cloudErr)
 		}
-		if r.cloud == nil {
-			return nil, errors.New("router: fallback cloud engine is not available")
+		if fallbackEngine == nil {
+			return nil, errors.New("router: no active engine available")
 		}
-		return r.cloud.GenerateStream(ctx, req)
+		return fallbackEngine.GenerateStream(ctx, req)
 	}
 }
 

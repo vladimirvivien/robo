@@ -48,3 +48,37 @@ func TestCollector_CollectAndFormat(t *testing.T) {
 		t.Errorf("missing command in formatted context: %s", formatted)
 	}
 }
+
+func TestCollector_FiltersSelfReferentialRoboCommands(t *testing.T) {
+	dir := t.TempDir()
+	histFile := filepath.Join(dir, "ConsoleHost_history.txt")
+	histContent := "git status\nrobo \"what is my cpu\"\n.\\bin\\robo status\nkubectl get pods\n./robo get --model 2b\ndocker ps\n"
+	if err := os.WriteFile(histFile, []byte(histContent), 0600); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	hr := shell.NewHistoryReader(shell.ShellPowerShell).WithCustomPath(histFile)
+	collector := shell.NewCollector(hr).WithWorkingDir(dir)
+
+	ctx := context.Background()
+	sc, err := collector.Collect(ctx, 10)
+	if err != nil {
+		t.Fatalf("Collect failed: %v", err)
+	}
+
+	formatted := sc.FormatPromptContext()
+
+	// Ensure non-robo commands are present
+	for _, expected := range []string{"git status", "kubectl get pods", "docker ps"} {
+		if !strings.Contains(formatted, expected) {
+			t.Errorf("expected %q in formatted context, got:\n%s", expected, formatted)
+		}
+	}
+
+	// Ensure robo commands are filtered out
+	for _, filtered := range []string{"robo \"what is my cpu\"", ".\\bin\\robo status", "./robo get --model 2b"} {
+		if strings.Contains(formatted, filtered) {
+			t.Errorf("expected %q to be filtered out, got:\n%s", filtered, formatted)
+		}
+	}
+}

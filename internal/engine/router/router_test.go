@@ -258,7 +258,9 @@ func TestRouter_Close(t *testing.T) {
 	local := engine.NewMockEngine("local")
 	cloud := engine.NewMockEngine("cloud")
 
-	r := router.NewRouter(local, cloud, config.LLMConfig{})
+	r := router.NewRouter(local, cloud, config.LLMConfig{
+		Cloud: config.CloudConfig{Enabled: true},
+	})
 	if err := r.Close(); err != nil {
 		t.Fatalf("Close failed: %v", err)
 	}

@@ -185,7 +185,10 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	// 6. Construct engines
 	inProcEngine := local.New(cfg.LLM.Local, cfg)
 	localClient := daemon.NewClient(*cfg, daemon.WithInProcEngine(inProcEngine))
-	cloudEngine := cloud.New(cfg.LLM.Cloud, cfg)
+	var cloudEngine engine.Engine
+	if cfg.LLM.Cloud.Enabled {
+		cloudEngine = cloud.New(cfg.LLM.Cloud, cfg)
+	}
 
 	r := router.NewRouter(localClient, cloudEngine, cfg.LLM)
 	defer func() { _ = r.Close() }()
