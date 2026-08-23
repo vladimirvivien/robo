@@ -41,7 +41,7 @@ func StopActiveSpinner() {
 	}
 }
 
-// StartSpinner creates and starts an animated spinner on stdout if in a terminal.
+// StartSpinner creates and starts an animated spinner on stderr if in an interactive terminal.
 func StartSpinner(message string) *Spinner {
 	StopActiveSpinner()
 
@@ -49,10 +49,10 @@ func StartSpinner(message string) *Spinner {
 		message: message,
 		stopCh:  make(chan struct{}),
 		doneCh:  make(chan struct{}),
-		out:     os.Stdout,
+		out:     os.Stderr,
 	}
 
-	if !IsStdoutTerminal() {
+	if !IsStderrTerminal() && !IsStdoutTerminal() {
 		close(s.doneCh)
 		return s
 	}

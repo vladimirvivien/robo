@@ -20,6 +20,19 @@ func StripCodeBlock(text string) string {
 	return codeBlockRegex.ReplaceAllString(text, "")
 }
 
+var (
+	proseWordSet = map[string]bool{
+		"is": true, "are": true, "was": true, "were": true, "be": true, "been": true, "being": true,
+		"the": true, "a": true, "an": true, "this": true, "that": true, "these": true, "those": true,
+		"as": true, "because": true, "if": true, "when": true, "while": true, "where": true,
+		"it": true, "its": true, "you": true, "your": true, "we": true, "our": true, "they": true,
+		"installed": true, "returned": true, "running": true, "found": true, "output": true,
+		"here": true, "please": true, "note": true, "can": true, "should": true, "could": true,
+		"would": true, "to": true, "for": true, "with": true, "without": true, "about": true,
+		"no": true, "not": true, "already": true, "currently": true, "version": true, "machine": true,
+	}
+)
+
 // ExtractProposedCommand extracts a shell command from LLM response text if formatted as code or command block.
 func ExtractProposedCommand(text string) string {
 	trimmed := strings.TrimSpace(text)
@@ -43,11 +56,39 @@ func ExtractProposedCommand(text string) string {
 		if strings.HasPrefix(line, "> ") {
 			return strings.TrimSpace(line[2:])
 		}
-		// If single line has no markdown and looks like a command (e.g. starts with common cli tool)
-		firstWord := strings.Fields(line)
-		if len(firstWord) > 0 {
-			switch firstWord[0] {
-			case "git", "jj", "docker", "kubectl", "find", "grep", "ls", "cat", "go", "cargo", "npm", "yarn", "pnpm", "python", "tar", "zip", "unzip", "curl", "wget", "ps", "kill", "systemctl":
+		if strings.HasPrefix(line, "PS> ") {
+			return strings.TrimSpace(line[4:])
+		}
+
+		// Reject prose containing inline backticks
+		if strings.Count(line, "`") >= 2 {
+			return ""
+		}
+
+		// Reject prose ending in sentence punctuation (. ! ? :) unless it's a directory arg (. or ..)
+		if strings.HasSuffix(line, "!") || strings.HasSuffix(line, "?") || strings.HasSuffix(line, ":") {
+			return ""
+		}
+		if strings.HasSuffix(line, ".") && !strings.HasSuffix(line, " .") && !strings.HasSuffix(line, " ..") && !strings.HasSuffix(line, " .\\") && !strings.HasSuffix(line, " ./") {
+			return ""
+		}
+
+		// Check tokens: if any token is a common conversational prose word, reject as prose
+		words := strings.Fields(line)
+		if len(words) > 1 {
+			for _, w := range words[1:] {
+				cleanedWord := strings.ToLower(strings.Trim(w, ",;\"'()[]{}"))
+				if proseWordSet[cleanedWord] {
+					return ""
+				}
+			}
+		}
+
+		// Check if first word is a known CLI tool or cmdlet
+		if len(words) > 0 {
+			first := strings.ToLower(strings.Trim(words[0], ",;\"'()[]{}"))
+			switch first {
+			case "git", "jj", "docker", "kubectl", "find", "grep", "ls", "cat", "go", "cargo", "npm", "npx", "yarn", "pnpm", "python", "python3", "pip", "pip3", "tar", "zip", "unzip", "curl", "wget", "ps", "kill", "systemctl", "get-process", "get-service", "get-childitem", "get-nettcpconnection", "start-service", "stop-service", "restart-service", "set-item", "remove-item", "new-item":
 				return line
 			}
 		}

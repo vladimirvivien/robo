@@ -37,6 +37,31 @@ func TestExtractProposedCommand(t *testing.T) {
 			input:    "Go channels provide synchronization across goroutines.",
 			expected: "",
 		},
+		{
+			name:     "sentence starting with tool name and inline backticks",
+			input:    "npm is installed on this machine, as the command `npm -v` returned version `11.6.2`.",
+			expected: "",
+		},
+		{
+			name:     "sentence starting with find",
+			input:    "find out if robo is installed on this machine.",
+			expected: "",
+		},
+		{
+			name:     "valid single line npm command",
+			input:    "npm -v",
+			expected: "npm -v",
+		},
+		{
+			name:     "valid single line command with dot argument",
+			input:    "find . -type f",
+			expected: "find . -type f",
+		},
+		{
+			name:     "powershell prompt prefix",
+			input:    "PS> Get-Process -Name robo",
+			expected: "Get-Process -Name robo",
+		},
 	}
 
 	for _, tc := range tests {

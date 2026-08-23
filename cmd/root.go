@@ -149,16 +149,11 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	}
 
 	// 4. Start visual spinner immediately upon prompt receipt
-	isInteractive := ui.IsStdoutTerminal() && (outputFormat == "markdown" || outputFormat == "md" || outputFormat == "")
-	var sp *ui.Spinner
+	isInteractive := (ui.IsStdoutTerminal() || ui.IsStderrTerminal()) && (outputFormat == "markdown" || outputFormat == "md" || outputFormat == "")
 	if isInteractive {
-		sp = ui.StartSpinner("Working...")
+		ui.StartSpinner("Initializing...")
 	}
-	defer func() {
-		if sp != nil {
-			sp.Stop()
-		}
-	}()
+	defer ui.StopActiveSpinner()
 
 	// 5. Construct engines
 	inProcEngine := local.New(cfg.LLM.Local, cfg)
@@ -170,10 +165,6 @@ func runRoot(cmd *cobra.Command, args []string) error {
 
 	r := router.NewRouter(localClient, cloudEngine, cfg.LLM)
 	defer func() { _ = r.Close() }()
-
-	if sp != nil {
-		sp.Stop()
-	}
 
 	sessionConfig := engine.SessionConfig{
 		MaxSteps:           flagMaxSteps,

@@ -105,6 +105,8 @@ func (r *SessionRunner) Run(ctx context.Context, goal string) (*SessionResult, e
 
 	tm := NewTrajectoryManager()
 
+	defer ui.StopActiveSpinner()
+
 	for step := 1; step <= r.Settings.MaxSteps; step++ {
 		// 1. Build prompt for Turn N with sliding-window compressed trajectory
 		sysPrompt := shell.BuildSystemPrompt(targetOS, targetArch, shellType, customInstructions, shellCtx)
@@ -123,18 +125,30 @@ func (r *SessionRunner) Run(ctx context.Context, goal string) (*SessionResult, e
 			})
 		}
 
-		// 2. Stream generation
+		// 2. Stream generation with animated visual spinner
+		isInteractive := (ui.IsStderrTerminal() || ui.IsStdoutTerminal()) &&
+			(r.Settings.OutputFormat == "markdown" || r.Settings.OutputFormat == "md" || r.Settings.OutputFormat == "")
+		if isInteractive {
+			if step == 1 {
+				ui.StartSpinner("Working...")
+			} else {
+				ui.StartSpinner(fmt.Sprintf("Evaluating step %d...", step))
+			}
+		}
+
 		var fullText strings.Builder
 		var proposedToolCalls []ToolCall
 
 		stream, err := r.Engine.GenerateStream(ctx, req)
 		if err != nil {
+			ui.StopActiveSpinner()
 			result.Status = "error"
 			return result, fmt.Errorf("session step %d generation failed: %w", step, err)
 		}
 
 		for chunk := range stream {
 			if chunk.Error != nil {
+				ui.StopActiveSpinner()
 				result.Status = "error"
 				return result, fmt.Errorf("session step %d stream error: %w", step, chunk.Error)
 			}
@@ -143,6 +157,8 @@ func (r *SessionRunner) Run(ctx context.Context, goal string) (*SessionResult, e
 				proposedToolCalls = append(proposedToolCalls, chunk.ToolCalls...)
 			}
 		}
+
+		ui.StopActiveSpinner()
 
 		rawResponse := fullText.String()
 		cleaned := ui.CleanResponseText(rawResponse)

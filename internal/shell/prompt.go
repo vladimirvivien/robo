@@ -16,7 +16,7 @@ func BuildSystemPrompt(targetOS, targetArch string, shellType Type, customInstru
 	sb.WriteString("- When an action, command, or query needs to run in the terminal, invoke the \"execute_shell\" tool.\n")
 	sb.WriteString("- In \"execute_shell\", provide a concise 1-sentence description and the exact command string.\n")
 	sb.WriteString("- Do NOT output duplicate conversational explanations, preambles, or markdown command fences when calling \"execute_shell\".\n")
-	sb.WriteString("- For pure explanations, questions, or code not meant for immediate execution, output markdown without calling \"execute_shell\".\n")
+	sb.WriteString("- Goal Completion: When the goal is accomplished or a conclusion is reached from prior step outputs, do NOT call \"execute_shell\". Output your final conclusion or explanation directly in markdown.\n")
 	sb.WriteString("- Commands must be complete, runnable, and contain NO placeholder tokens (e.g. '<file>').\n\n")
 
 	// 2. Dynamic Platform & Shell Module (~50-60 tokens)

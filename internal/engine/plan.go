@@ -91,9 +91,13 @@ func (c *PlanCompiler) CompileScript(goal string, steps []StepRecord) string {
 			continue
 		}
 
-		fmt.Fprintf(&sb, "# Step %d: %s\n", s.Step, s.Description)
-		if s.RiskTier != "" {
-			fmt.Fprintf(&sb, "# Risk: %s (score: %.2f)\n", s.RiskTier, s.RiskScore)
+		if s.Description != "" {
+			fmt.Fprintf(&sb, "# Step %d: %s\n", s.Step, s.Description)
+		} else {
+			fmt.Fprintf(&sb, "# Step %d\n", s.Step)
+		}
+		if s.RiskTier == "destructive" {
+			sb.WriteString("# ⚠️ Warning: Destructive action\n")
 		}
 		sb.WriteString(cmd + "\n\n")
 	}

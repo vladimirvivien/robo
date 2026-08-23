@@ -106,45 +106,6 @@ func BadgeError(text string) string {
 	return styleErrorBadge.Render(text)
 }
 
-// BadgeReadOnly renders a styled badge for safe read-only queries.
-func BadgeReadOnly(text string) string {
-	if text == "" {
-		text = "Tier 1: Read-Only"
-	}
-	return lipgloss.NewStyle().
-		Bold(true).
-		Foreground(colorSalt).
-		Background(colorMalibu).
-		Padding(0, 1).
-		Render(text)
-}
-
-// BadgeMutating renders a styled badge for state-modifying actions.
-func BadgeMutating(text string) string {
-	if text == "" {
-		text = "Tier 2: Mutating"
-	}
-	return lipgloss.NewStyle().
-		Bold(true).
-		Foreground(colorPepper).
-		Background(colorMustard).
-		Padding(0, 1).
-		Render(text)
-}
-
-// BadgeDestructive renders a styled badge for high-risk destructive actions.
-func BadgeDestructive(text string) string {
-	if text == "" {
-		text = "Tier 3: Destructive"
-	}
-	return lipgloss.NewStyle().
-		Bold(true).
-		Foreground(colorSalt).
-		Background(colorSriracha).
-		Padding(0, 1).
-		Render(text)
-}
-
 // Card wraps content in a styled rounded border box with automatic width bounding.
 func Card(title, content, footer string) string {
 	return CardWithWidth(title, content, footer, CappedWidth(0))
@@ -207,17 +168,16 @@ func RiskCommandCardWithWidth(title, command string, tier string, warning string
 
 	borderColor := colorCharple
 	titleColor := colorDolly
-	badge := BadgeReadOnly("")
+	badge := ""
 
 	switch strings.ToLower(tier) {
 	case "destructive", "tier-3":
 		borderColor = colorSriracha
 		titleColor = colorSriracha
-		badge = BadgeDestructive("")
+		badge = BadgeWarning("Destructive")
 	case "mutating", "tier-2":
 		borderColor = colorMustard
 		titleColor = colorMustard
-		badge = BadgeMutating("")
 	}
 
 	var sb strings.Builder

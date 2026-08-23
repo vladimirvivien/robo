@@ -20,6 +20,11 @@ func IsStdoutTerminal() bool {
 	return IsTerminal(os.Stdout)
 }
 
+// IsStderrTerminal returns true if stderr is connected to an interactive terminal.
+func IsStderrTerminal() bool {
+	return IsTerminal(os.Stderr)
+}
+
 // IsStdinTerminal returns true if stdin is connected to an interactive terminal (not piped).
 func IsStdinTerminal() bool {
 	return IsTerminal(os.Stdin)
