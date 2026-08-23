@@ -220,11 +220,15 @@ robod:
 ---
 ## Known issue(s)
 
+### Limited Small Model Knowledge
+
+Using a small models like Gemma-4 2B or 4B (or even smaller) means `robo` performs better on well-known commands and tools. Smaller language models lack the general knowledge of less popular tools or commands and may require additional steering or prompt restructure to get results.
+
 ### Subshell Isolation Note
 
 Commands executed by `robo` run in an isolated child subshell (`powershell -Command` on Windows, `bash -c` on Linux/macOS). 
 
-Session-specific mutations—such as directory changes (`cd`), environment variables (`export`, `$env:`), virtual environments (`source`, `conda activate`), and keyring daemons (`ssh-agent`)—execute within the subshell process and do not mutate the parent terminal. When a task requires persistent session state, `robo` explains this boundary and provides the command for direct execution.
+Session-specific mutations—such as environment variables (`export`, `$env:`), virtual environments (`source`, `conda activate`), and other shell-bound changes, changes the subshell process and do not mutate the parent terminal. When a task requires persistent session state, `robo` explains this boundary and provides the command for direct execution.
 
 ---
 
