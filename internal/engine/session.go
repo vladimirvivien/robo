@@ -188,6 +188,8 @@ func (r *SessionRunner) Run(ctx context.Context, goal string) (*SessionResult, e
 
 		if r.Settings.DryRun {
 			stepRec.Executed = false
+			stepRec.Output = "[Dry-Run simulated success]"
+			stepRec.ExitCode = 0
 			tm.AddStep(stepRec)
 			if r.Settings.OneShot {
 				break
