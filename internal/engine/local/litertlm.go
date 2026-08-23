@@ -2,6 +2,7 @@ package local
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -147,6 +148,7 @@ func (e *Engine) Generate(ctx context.Context, req engine.Request) (*engine.Resp
 	fullPrompt := formatPrompt(req)
 
 	var chatOpts []litertlm.ChatOption
+	chatOpts = append(chatOpts, litertlm.WithMaxToolHops(1))
 	if req.SystemPrompt != "" {
 		chatOpts = append(chatOpts, litertlm.WithSystemPrompt(req.SystemPrompt))
 	}
@@ -170,6 +172,16 @@ func (e *Engine) Generate(ctx context.Context, req engine.Request) (*engine.Resp
 
 	reply, err := chat.Send(execCtx, fullPrompt, runtimeOpts...)
 	if err != nil {
+		if errors.Is(err, litertlm.ErrToolHopsExceeded) && len(rec.get()) > 0 {
+			return &engine.Response{
+				Text:       "",
+				ToolCalls:  rec.get(),
+				Provider:   "litertlm",
+				Model:      e.cfg.Model,
+				UsedLocal:  true,
+				TokensUsed: 0,
+			}, nil
+		}
 		return nil, fmt.Errorf("local: chat send: %w", err)
 	}
 
@@ -202,6 +214,7 @@ func (e *Engine) GenerateStream(ctx context.Context, req engine.Request) (<-chan
 		defer close(out)
 
 		var chatOpts []litertlm.ChatOption
+		chatOpts = append(chatOpts, litertlm.WithMaxToolHops(1))
 		if req.SystemPrompt != "" {
 			chatOpts = append(chatOpts, litertlm.WithSystemPrompt(req.SystemPrompt))
 		}
@@ -221,6 +234,13 @@ func (e *Engine) GenerateStream(ctx context.Context, req engine.Request) (<-chan
 
 		for chunk, err := range chat.SendStream(execCtx, fullPrompt, runtimeOpts...) {
 			if err != nil {
+				if errors.Is(err, litertlm.ErrToolHopsExceeded) && len(rec.get()) > 0 {
+					out <- engine.StreamChunk{
+						ToolCalls: rec.get(),
+						Final:     true,
+					}
+					return
+				}
 				out <- engine.StreamChunk{Error: err}
 				return
 			}
