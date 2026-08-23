@@ -9,10 +9,43 @@ import (
 	"time"
 )
 
+var roboVersion = "dev"
+
+// SetRoboVersion sets the application version string used in environment context prompts.
+func SetRoboVersion(v string) {
+	if strings.TrimSpace(v) != "" {
+		roboVersion = v
+	}
+}
+
+// DetectDistro returns a short distro identifier on Linux (from /etc/os-release) or standard OS name.
+func DetectDistro() string {
+	if runtime.GOOS == "linux" {
+		if data, err := os.ReadFile("/etc/os-release"); err == nil {
+			for line := range strings.SplitSeq(string(data), "\n") {
+				if after, ok := strings.CutPrefix(line, "PRETTY_NAME="); ok {
+					val := after
+					return strings.Trim(val, `"'`)
+				}
+			}
+		}
+		return "Linux"
+	}
+	if runtime.GOOS == "darwin" {
+		return "macOS"
+	}
+	if runtime.GOOS == "windows" {
+		return "Windows"
+	}
+	return runtime.GOOS
+}
+
 // Context encapsulates the developer's active terminal and shell history state.
 type Context struct {
 	OS             string           `json:"os"`
 	Arch           string           `json:"arch"`
+	Distro         string           `json:"distro,omitempty"`
+	RoboVersion    string           `json:"robo_version,omitempty"`
 	Shell          Type             `json:"shell"`
 	Cwd            string           `json:"cwd"`
 	RecentCommands []string         `json:"recent_commands,omitempty"`
@@ -57,10 +90,12 @@ func (c *Collector) Collect(ctx context.Context, maxHistory int) (*Context, erro
 	}
 
 	sc := &Context{
-		OS:    runtime.GOOS,
-		Arch:  runtime.GOARCH,
-		Shell: DetectShell(),
-		Cwd:   dir,
+		OS:          runtime.GOOS,
+		Arch:        runtime.GOARCH,
+		Distro:      DetectDistro(),
+		RoboVersion: roboVersion,
+		Shell:       DetectShell(),
+		Cwd:         dir,
 	}
 
 	// Gather recent shell history directly from history file (sub-millisecond)
@@ -84,9 +119,17 @@ func (c *Collector) Collect(ctx context.Context, maxHistory int) (*Context, erro
 func (c *Context) FormatPromptContext() string {
 	var sb strings.Builder
 	sb.WriteString("[Active Environment Context]\n")
-	if c.OS != "" {
-		fmt.Fprintf(&sb, "OS/Architecture: %s (%s)\n", c.OS, c.Arch)
+
+	systemInfo := fmt.Sprintf("%s (%s/%s)", c.OS, c.OS, c.Arch)
+	if c.Distro != "" && !strings.EqualFold(c.Distro, c.OS) {
+		systemInfo = fmt.Sprintf("%s (%s/%s)", c.Distro, c.OS, c.Arch)
 	}
+	if c.RoboVersion != "" && c.RoboVersion != "none" {
+		fmt.Fprintf(&sb, "System: %s • robo %s\n", systemInfo, c.RoboVersion)
+	} else {
+		fmt.Fprintf(&sb, "System: %s\n", systemInfo)
+	}
+
 	if c.Shell != "" && c.Shell != ShellUnknown {
 		fmt.Fprintf(&sb, "Active Shell: %s\n", c.Shell)
 	}

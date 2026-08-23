@@ -28,6 +28,9 @@ func TestBuildSystemPrompt_PowerShell(t *testing.T) {
 	if strings.Contains(prompt, "GNU utilities") || strings.Contains(prompt, "Target Environment: Linux") {
 		t.Errorf("PowerShell prompt should not contain Linux GNU rules")
 	}
+	if !strings.Contains(prompt, "Subshell Isolation:") {
+		t.Errorf("expected Subshell Isolation in prompt, got:\n%s", prompt)
+	}
 	if !strings.Contains(prompt, "Context Resolution:") {
 		t.Errorf("expected Context Resolution in prompt, got:\n%s", prompt)
 	}

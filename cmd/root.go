@@ -15,6 +15,7 @@ import (
 	"github.com/vladimirvivien/robo/internal/engine"
 	"github.com/vladimirvivien/robo/internal/engine/cloud"
 	"github.com/vladimirvivien/robo/internal/engine/local"
+	"github.com/vladimirvivien/robo/internal/shell"
 	"github.com/vladimirvivien/robo/internal/ui"
 )
 
@@ -56,6 +57,7 @@ func Execute() error {
 func init() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 	log.SetOutput(io.Discard)
+	shell.SetRoboVersion(Version)
 
 	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ~/.robo/config.yaml)")
 	RootCmd.PersistentFlags().StringVarP(&flagOutput, "output", "o", "markdown", "output format (markdown, plain, json, code)")

@@ -18,6 +18,9 @@ func BuildSystemPrompt(targetOS, targetArch string, shellType Type, customInstru
 	sb.WriteString("- Do NOT output duplicate conversational explanations, preambles, or markdown command fences when calling \"execute_shell\".\n")
 	sb.WriteString("- Goal Completion: When the goal is accomplished or a conclusion is reached from prior step outputs, do NOT call \"execute_shell\". Output your final conclusion or explanation directly in markdown.\n")
 	sb.WriteString("- Commands must be complete, runnable, and contain NO placeholder tokens (e.g. '<file>').\n\n")
+	sb.WriteString("Subshell Isolation:\n")
+	sb.WriteString("- \"execute_shell\" runs in a child subshell; session state (cd, export, $env:, source, ssh-agent) does NOT persist to the user's active terminal.\n")
+	sb.WriteString("- When asked why a session/directory change didn't take effect, or when a task requires terminal persistence, explain the subshell boundary and provide the command for direct execution.\n\n")
 
 	// 2. Dynamic Platform & Shell Module (~50-60 tokens)
 	switch shellType {

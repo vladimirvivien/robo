@@ -125,3 +125,19 @@ func TestCollector_FormatsLastExecution(t *testing.T) {
 		t.Errorf("expected error output in prompt context, got:\n%s", formatted)
 	}
 }
+
+func TestCollector_FormatsDistroAndVersion(t *testing.T) {
+	sc := &shell.Context{
+		OS:          "linux",
+		Arch:        "amd64",
+		Distro:      "Ubuntu 24.04.1 LTS",
+		RoboVersion: "v0.1.0",
+		Shell:       shell.ShellBash,
+		Cwd:         "/home/user/project",
+	}
+
+	formatted := sc.FormatPromptContext()
+	if !strings.Contains(formatted, "System: Ubuntu 24.04.1 LTS (linux/amd64) • robo v0.1.0") {
+		t.Errorf("expected system line with distro and robo version, got:\n%s", formatted)
+	}
+}
