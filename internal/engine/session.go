@@ -75,15 +75,15 @@ func (r *SessionRunner) Run(ctx context.Context, goal string) (*SessionResult, e
 	result := &SessionResult{
 		Goal:   goal,
 		Status: "completed",
-		Local:  r.Config != nil && r.Config.LLM.Local.Enabled,
+		Local:  r.Config == nil || r.Config.Robo.InferenceMode != "llm",
 	}
 	if r.Config != nil {
-		if r.Config.LLM.Local.Enabled {
-			result.Provider = r.Config.LLM.Local.Provider
-			result.Model = r.Config.LLM.Local.Model
+		if r.Config.Robo.InferenceMode == "llm" {
+			result.Provider = r.Config.LLM.Provider
+			result.Model = r.Config.LLM.Model
 		} else {
-			result.Provider = r.Config.LLM.Cloud.Provider
-			result.Model = r.Config.LLM.Cloud.Model
+			result.Provider = "litertlm"
+			result.Model = r.Config.SLM.Model
 		}
 	}
 
@@ -92,10 +92,10 @@ func (r *SessionRunner) Run(ctx context.Context, goal string) (*SessionResult, e
 	targetArch := runtime.GOARCH
 
 	var shellCtx *shell.Context
-	if r.Config == nil || r.Config.Shell.CaptureHistory {
+	if r.Config == nil || r.Config.Robo.CaptureHistory {
 		maxLines := 10
-		if r.Config != nil && r.Config.Shell.MaxHistoryLines > 0 {
-			maxLines = r.Config.Shell.MaxHistoryLines
+		if r.Config != nil && r.Config.Robo.MaxHistoryLines > 0 {
+			maxLines = r.Config.Robo.MaxHistoryLines
 		}
 		collector := shell.NewCollector(nil)
 		shellCtx, _ = collector.Collect(ctx, maxLines)

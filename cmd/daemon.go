@@ -110,12 +110,12 @@ func runDaemonStart(cmd *cobra.Command, args []string) error {
 	}
 
 	// Foreground mode: start server directly
-	eng := local.New(cfg.LLM.Local, cfg)
+	eng := local.New(cfg.SLM, cfg)
 
 	opts := daemon.ServerOptions{
 		URL:       config.DefaultRobodURL,
 		IdleTTL:   cfg.Robod.IdleTTL,
-		ModelName: cfg.LLM.Local.Model,
+		ModelName: cfg.SLM.Model,
 	}
 
 	server, err := daemon.NewServer(eng, opts)
@@ -199,7 +199,7 @@ func runDaemonStatus(cmd *cobra.Command, args []string) error {
 	} else {
 		cfg, _ := config.Load(cfgFile)
 		if cfg != nil {
-			model = cfg.LLM.Local.Model
+			model = cfg.SLM.Model
 		}
 	}
 

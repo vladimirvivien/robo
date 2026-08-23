@@ -12,7 +12,7 @@ import (
 func TestCheckCloudSetup(t *testing.T) {
 	t.Run("with API key", func(t *testing.T) {
 		t.Setenv("GEMINI_API_KEY", "test-key-abc")
-		cfg := config.CloudConfig{
+		cfg := config.LLMConfig{
 			Provider:  "googleai",
 			APIKeyEnv: "GEMINI_API_KEY",
 		}
@@ -27,7 +27,7 @@ func TestCheckCloudSetup(t *testing.T) {
 		t.Setenv("GOOGLE_API_KEY", "")
 		t.Setenv("ANTHROPIC_API_KEY", "")
 		t.Setenv("OPENAI_API_KEY", "")
-		cfg := config.CloudConfig{
+		cfg := config.LLMConfig{
 			Provider:  "googleai",
 			APIKeyEnv: "GEMINI_API_KEY",
 		}
@@ -46,8 +46,8 @@ func TestValidateInferenceSetup(t *testing.T) {
 
 	t.Run("fails when local library directory is missing", func(t *testing.T) {
 		cfg := config.NewDefaultConfig()
-		cfg.LLM.Local.LibDir = "/nonexistent/lib/dir"
-		cfg.LLM.Local.Model = "/nonexistent/model.bin"
+		cfg.SLM.LibDir = "/nonexistent/lib/dir"
+		cfg.SLM.Model = "/nonexistent/model.bin"
 		err := engine.ValidateInferenceSetup(cfg, "auto")
 		if err == nil {
 			t.Error("expected error when local library is missing, got nil")
@@ -61,8 +61,8 @@ func TestValidateInferenceSetup(t *testing.T) {
 		_ = os.WriteFile(filepath.Join(libDir, "dummy.dll"), []byte("fake-lib"), 0644)
 
 		cfg := config.NewDefaultConfig()
-		cfg.LLM.Local.LibDir = libDir
-		cfg.LLM.Local.Model = "/nonexistent/model.bin"
+		cfg.SLM.LibDir = libDir
+		cfg.SLM.Model = "/nonexistent/model.bin"
 		err := engine.ValidateInferenceSetup(cfg, "auto")
 		if err == nil {
 			t.Error("expected error when local model is missing, got nil")
@@ -78,8 +78,8 @@ func TestValidateInferenceSetup(t *testing.T) {
 		_ = os.WriteFile(modelFile, []byte("fake-weights"), 0644)
 
 		cfg := config.NewDefaultConfig()
-		cfg.LLM.Local.LibDir = libDir
-		cfg.LLM.Local.Model = modelFile
+		cfg.SLM.LibDir = libDir
+		cfg.SLM.Model = modelFile
 		err := engine.ValidateInferenceSetup(cfg, "auto")
 		if err != nil {
 			t.Errorf("expected success when local files exist, got %v", err)
@@ -95,9 +95,9 @@ func TestValidateInferenceSetup(t *testing.T) {
 		_ = os.WriteFile(modelFile, []byte("fake-weights"), 0644)
 
 		cfg := config.NewDefaultConfig()
-		cfg.LLM.Local.LibDir = libDir
-		cfg.LLM.Local.Model = modelFile
-		cfg.LLM.Cloud.APIKey = ""
+		cfg.SLM.LibDir = libDir
+		cfg.SLM.Model = modelFile
+		cfg.LLM.APIKey = ""
 		err := engine.ValidateInferenceSetup(cfg, "cloud-only")
 		if err == nil {
 			t.Error("expected error for cloud-only without API key, got nil")
@@ -113,9 +113,9 @@ func TestValidateInferenceSetup(t *testing.T) {
 		_ = os.WriteFile(modelFile, []byte("fake-weights"), 0644)
 
 		cfg := config.NewDefaultConfig()
-		cfg.LLM.Local.LibDir = libDir
-		cfg.LLM.Local.Model = modelFile
-		cfg.LLM.Cloud.APIKey = "valid-key"
+		cfg.SLM.LibDir = libDir
+		cfg.SLM.Model = modelFile
+		cfg.LLM.APIKey = "valid-key"
 		err := engine.ValidateInferenceSetup(cfg, "cloud-only")
 		if err != nil {
 			t.Errorf("expected success for cloud-only with API key, got %v", err)

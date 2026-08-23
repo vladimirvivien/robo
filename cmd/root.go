@@ -15,22 +15,17 @@ import (
 	"github.com/vladimirvivien/robo/internal/engine"
 	"github.com/vladimirvivien/robo/internal/engine/cloud"
 	"github.com/vladimirvivien/robo/internal/engine/local"
-	"github.com/vladimirvivien/robo/internal/engine/router"
 	"github.com/vladimirvivien/robo/internal/ui"
 )
 
 var (
-	cfgFile            string
-	flagLocal          bool
-	flagCloud          bool
-	flagOutput         string
-	flagSystem         string
-	flagNoStream       bool
-	flagAutoAccept     bool
-	flagOneShot        bool
-	flagDryRun         bool
-	flagMaxSteps       int
-	flagYoloApproveAll bool
+	cfgFile        string
+	flagOutput     string
+	flagSystem     string
+	flagAutoAccept bool
+	flagOneShot    bool
+	flagDryRun     bool
+	flagMaxSteps   int
 )
 
 // RootCmd represents the base command when called without subcommands.
@@ -64,16 +59,11 @@ func init() {
 
 	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ~/.robo/config.yaml)")
 	RootCmd.PersistentFlags().StringVarP(&flagOutput, "output", "o", "markdown", "output format (markdown, plain, json, code)")
-	RootCmd.Flags().BoolVarP(&flagLocal, "local-only", "l", false, "force execution on local on-device SLM")
-	RootCmd.Flags().BoolVarP(&flagCloud, "cloud-only", "c", false, "force execution on cloud frontier model")
 	RootCmd.Flags().StringVar(&flagSystem, "system", "", "custom system prompt override")
-	RootCmd.Flags().BoolVar(&flagNoStream, "no-stream", false, "disable streaming output")
 	RootCmd.Flags().BoolVarP(&flagAutoAccept, "yolo", "y", false, "auto-accept all non-destructive actions without prompt")
-	RootCmd.Flags().BoolVar(&flagAutoAccept, "auto-accept", false, "alias for --yolo")
-	RootCmd.Flags().BoolVarP(&flagOneShot, "one-shot", "1", false, "force strictly single-turn execution ($N=1$) without follow-up loop")
+	RootCmd.Flags().BoolVarP(&flagOneShot, "one-shot", "1", false, "force strictly single-turn execution (N=1) without follow-up loop")
 	RootCmd.Flags().BoolVarP(&flagDryRun, "dry-run", "d", false, "simulate execution plan without host mutation")
 	RootCmd.Flags().IntVar(&flagMaxSteps, "max-steps", 5, "maximum number of agent completion steps")
-	RootCmd.Flags().BoolVar(&flagYoloApproveAll, "yolo-approve-all", false, "auto-accept and execute all actions including destructive ones (no prompts)")
 }
 
 func runRoot(cmd *cobra.Command, args []string) error {
@@ -102,10 +92,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 
 	// Apply CLI flags to config overrides
 	if flagAutoAccept {
-		cfg.Shell.AutoAccept = true
-	}
-	if flagYoloApproveAll {
-		cfg.Shell.YoloApproveAll = true
+		cfg.Robo.AutoAccept = true
 	}
 
 	// 1. Read prompt and stdin
@@ -128,23 +115,17 @@ func runRoot(cmd *cobra.Command, args []string) error {
 
 	// 2. Resolve effective output format
 	outputFormat := flagOutput
-	if !cmd.Flags().Changed("output") && cfg.Shell.OutputMode != "" {
-		outputFormat = cfg.Shell.OutputMode
+	if !cmd.Flags().Changed("output") && cfg.Robo.OutputMode != "" {
+		outputFormat = cfg.Robo.OutputMode
 	}
-	cfg.Shell.OutputMode = outputFormat
+	cfg.Robo.OutputMode = outputFormat
 
 	if _, err := ui.NewFormatter(outputFormat, false, 80); err != nil {
 		return err
 	}
 
 	// 3. Validate inference environment setup
-	forceBackend := ""
-	if flagLocal {
-		forceBackend = "local-only"
-	} else if flagCloud {
-		forceBackend = "cloud-only"
-	}
-	if err := engine.ValidateInferenceSetup(cfg, forceBackend); err != nil {
+	if err := engine.ValidateInferenceSetup(cfg, cfg.Robo.InferenceMode); err != nil {
 		return err
 	}
 
@@ -155,40 +136,57 @@ func runRoot(cmd *cobra.Command, args []string) error {
 	}
 	defer ui.StopActiveSpinner()
 
-	// 5. Construct engines
-	inProcEngine := local.New(cfg.LLM.Local, cfg)
-	localClient := daemon.NewClient(*cfg, daemon.WithInProcEngine(inProcEngine))
-	var cloudEngine engine.Engine
-	if cfg.LLM.Cloud.Enabled {
-		cloudEngine = cloud.New(cfg.LLM.Cloud, cfg)
-	}
+	// 5. Construct engine based on inference_mode
+	var execEngine engine.Engine
+	var providerName, modelName string
+	var usedLocal bool
 
-	r := router.NewRouter(localClient, cloudEngine, cfg.LLM)
-	defer func() { _ = r.Close() }()
+	switch strings.ToLower(cfg.Robo.InferenceMode) {
+	case "llm", "cloud":
+		cloudEngine := cloud.New(cfg.LLM, cfg)
+		defer func() { _ = cloudEngine.Close() }()
+		execEngine = cloudEngine
+		providerName = cfg.LLM.Provider
+		modelName = cfg.LLM.Model
+		usedLocal = false
+
+	case "auto":
+		// Placeholder: defaults to local SLM execution
+		inProcEngine := local.New(cfg.SLM, cfg)
+		localClient := daemon.NewClient(*cfg, daemon.WithInProcEngine(inProcEngine))
+		defer func() { _ = localClient.Close() }()
+		execEngine = localClient
+		providerName = "litertlm"
+		modelName = cfg.SLM.Model
+		usedLocal = true
+
+	case "slm", "local", "":
+		fallthrough
+	default:
+		inProcEngine := local.New(cfg.SLM, cfg)
+		localClient := daemon.NewClient(*cfg, daemon.WithInProcEngine(inProcEngine))
+		defer func() { _ = localClient.Close() }()
+		execEngine = localClient
+		providerName = "litertlm"
+		modelName = cfg.SLM.Model
+		usedLocal = true
+	}
 
 	sessionConfig := engine.SessionConfig{
 		MaxSteps:           flagMaxSteps,
 		OneShot:            flagOneShot,
-		Yolo:               flagAutoAccept || flagYoloApproveAll,
+		Yolo:               flagAutoAccept || cfg.Robo.AutoAccept || cfg.Robo.YoloApproveAll,
 		DryRun:             flagDryRun,
 		OutputFormat:       outputFormat,
-		ForceBackend:       forceBackend,
+		ForceBackend:       cfg.Robo.InferenceMode,
 		CustomInstructions: flagSystem,
 		StdinContent:       stdinContent,
 	}
 
-	runner := engine.NewSessionRunner(r, cfg, sessionConfig)
+	runner := engine.NewSessionRunner(execEngine, cfg, sessionConfig)
 	res, err := runner.Run(ctx, prompt)
 	if err != nil {
 		return err
-	}
-
-	usedLocal := flagLocal || (!flagCloud && cfg.LLM.Local.Enabled)
-	providerName := cfg.LLM.Local.Provider
-	modelName := cfg.LLM.Local.Model
-	if !usedLocal {
-		providerName = cfg.LLM.Cloud.Provider
-		modelName = cfg.LLM.Cloud.Model
 	}
 
 	sessionSteps := make([]ui.TrajectoryStep, len(res.Steps))

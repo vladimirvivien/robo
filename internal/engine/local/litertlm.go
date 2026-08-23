@@ -40,7 +40,7 @@ func (r *toolRecorder) get() []engine.ToolCall {
 
 // Engine implements engine.Engine using Google LiteRT-LM.
 type Engine struct {
-	cfg       config.LocalConfig
+	cfg       config.SLMConfig
 	fullCfg   *config.Config
 	client    *litertlm.Client
 	shellTool *litertlm.ManagedTool[shell.ShellInput, shell.ShellOutput]
@@ -48,7 +48,7 @@ type Engine struct {
 }
 
 // New creates a new LiteRT-LM local engine instance.
-func New(cfg config.LocalConfig, fullCfg ...*config.Config) *Engine {
+func New(cfg config.SLMConfig, fullCfg ...*config.Config) *Engine {
 	var fc *config.Config
 	if len(fullCfg) > 0 {
 		fc = fullCfg[0]

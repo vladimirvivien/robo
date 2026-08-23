@@ -173,7 +173,7 @@ func TestSessionRunner_LoopDetection(t *testing.T) {
 
 	cfg := config.NewDefaultConfig()
 	// Disable interactive prompt for headless tests
-	cfg.Shell.OutputMode = "json"
+	cfg.Robo.OutputMode = "json"
 	runner := engine.NewSessionRunner(mock, cfg, engine.SessionConfig{
 		MaxSteps: 5,
 		Yolo:     true,

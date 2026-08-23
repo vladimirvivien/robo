@@ -47,7 +47,7 @@ func ResolveLibDir(version string, customLibDir ...string) string {
 }
 
 // CheckCloudSetup checks if cloud model credentials (API key) are available.
-func CheckCloudSetup(cfg config.CloudConfig) CloudSetupStatus {
+func CheckCloudSetup(cfg config.LLMConfig) CloudSetupStatus {
 	apiKey := cfg.APIKey
 	apiKeyEnv := cfg.APIKeyEnv
 
@@ -87,7 +87,7 @@ func CheckCloudSetup(cfg config.CloudConfig) CloudSetupStatus {
 }
 
 // CheckLocalSetup checks if local inference configuration is valid and provisioned on disk strictly in robo managed paths.
-func CheckLocalSetup(cfg config.LocalConfig) LocalSetupStatus {
+func CheckLocalSetup(cfg config.SLMConfig) LocalSetupStatus {
 	resolvedLibDir := ResolveLibDir(cfg.Version, cfg.LibDir)
 	resolvedModelPath := FindLocalModelPath(cfg.Model, cfg.CacheDir)
 
@@ -160,12 +160,12 @@ func IsModelDownloaded(modelIDOrPath string) bool {
 }
 
 // EnsureLocalSetup ensures the local libraries and model are downloaded.
-func EnsureLocalSetup(ctx context.Context, cfg config.LocalConfig) (string, string, error) {
+func EnsureLocalSetup(ctx context.Context, cfg config.SLMConfig) (string, string, error) {
 	return EnsureLocalSetupWithProgress(ctx, cfg)
 }
 
 // EnsureLocalSetupWithProgress downloads libraries and models into robo managed paths with visual terminal feedback.
-func EnsureLocalSetupWithProgress(ctx context.Context, cfg config.LocalConfig) (string, string, error) {
+func EnsureLocalSetupWithProgress(ctx context.Context, cfg config.SLMConfig) (string, string, error) {
 	libDir := ResolveLibDir(cfg.Version, cfg.LibDir)
 	modelPath := cfg.Model
 
@@ -292,28 +292,31 @@ func DownloadLibAsset(ctx context.Context, version string, customLibDir string, 
 
 // ValidateInferenceSetup verifies backend availability before running requests and fails fast if dependencies are missing.
 func ValidateInferenceSetup(cfg *config.Config, forceBackend string) error {
-	cloudStatus := CheckCloudSetup(cfg.LLM.Cloud)
-	localStatus := CheckLocalSetup(cfg.LLM.Local)
+	cloudStatus := CheckCloudSetup(cfg.LLM)
+	localStatus := CheckLocalSetup(cfg.SLM)
 
 	target := strings.ToLower(forceBackend)
-
-	// 1. LiteRT-LM runtime library is always required
-	if !localStatus.HasLib {
-		return fmt.Errorf("LiteRT-LM runtime library (%s) was not found on disk at %s.\n\nTo resolve:\n  • Run 'robo init' or 'robo get --litertlm-lib %s' to download libraries\n  • Or specify 'llm.local.lib_dir' in %s",
-			cfg.LLM.Local.Version, localStatus.LibDir, cfg.LLM.Local.Version, config.ConfigPath())
+	if target == "" {
+		target = strings.ToLower(cfg.Robo.InferenceMode)
 	}
 
-	// 2. Local model weights are always required (local litertlm is mandatory)
-	if !localStatus.HasModel {
-		return fmt.Errorf("configured local model %q was not found on disk.\n\nTo resolve:\n  • Run 'robo init' or 'robo get --model %s' to download model weights\n  • Or update 'llm.local.model' in %s with a valid local path",
-			cfg.LLM.Local.Model, cfg.LLM.Local.Model, config.ConfigPath())
-	}
-
-	// 3. If cloud-only was explicitly requested, ensure cloud credentials are configured
-	if target == "cloud-only" || target == "cloud" {
+	// 1. If cloud inference is selected, verify API key
+	if target == "llm" || target == "cloud" || target == "cloud-only" {
 		if !cloudStatus.Configured {
-			return fmt.Errorf("cloud inference is not configured: missing API key for provider %q.\n\nTo resolve:\n  • Set %s in your environment", cfg.LLM.Cloud.Provider, cloudStatus.APIKeyEnv)
+			return fmt.Errorf("cloud inference is not configured: missing API key for provider %q.\n\nTo resolve:\n  • Set %s in your environment", cfg.LLM.Provider, cloudStatus.APIKeyEnv)
 		}
+		return nil
+	}
+
+	// 2. Default: LiteRT-LM runtime library and local model weights are required
+	if !localStatus.HasLib {
+		return fmt.Errorf("LiteRT-LM runtime library (%s) was not found on disk at %s.\n\nTo resolve:\n  • Run 'robo init' or 'robo get --litertlm-lib %s' to download libraries\n  • Or specify 'slm.lib_dir' in %s",
+			cfg.SLM.Version, localStatus.LibDir, cfg.SLM.Version, config.ConfigPath())
+	}
+
+	if !localStatus.HasModel {
+		return fmt.Errorf("configured local model %q was not found on disk.\n\nTo resolve:\n  • Run 'robo init' or 'robo get --model %s' to download model weights\n  • Or update 'slm.model' in %s with a valid local path",
+			cfg.SLM.Model, cfg.SLM.Model, config.ConfigPath())
 	}
 
 	return nil

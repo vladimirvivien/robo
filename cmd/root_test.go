@@ -25,7 +25,7 @@ func TestRootCmd_Help(t *testing.T) {
 }
 
 func TestRootCmd_Flags(t *testing.T) {
-	flags := []string{"yolo", "auto-accept", "one-shot", "dry-run", "max-steps", "yolo-approve-all", "local-only", "cloud-only", "output", "config"}
+	flags := []string{"yolo", "one-shot", "dry-run", "max-steps", "system", "output", "config"}
 	for _, f := range flags {
 		flag := cmd.RootCmd.Flags().Lookup(f)
 		if flag == nil {

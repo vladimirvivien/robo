@@ -15,12 +15,12 @@ import (
 
 type geminiAdapter struct {
 	client      *http.Client
-	cfg         config.CloudConfig
+	cfg         config.LLMConfig
 	apiKey      string
 	toolHandler *shell.ToolHandler
 }
 
-func newGeminiAdapter(client *http.Client, cfg config.CloudConfig, apiKey string, toolHandler *shell.ToolHandler) *geminiAdapter {
+func newGeminiAdapter(client *http.Client, cfg config.LLMConfig, apiKey string, toolHandler *shell.ToolHandler) *geminiAdapter {
 	return &geminiAdapter{
 		client:      client,
 		cfg:         cfg,

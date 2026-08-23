@@ -78,13 +78,13 @@ func (h *ToolHandler) Handle(ctx context.Context, in ShellInput) (ShellOutput, e
 
 	outputMode := ""
 	if h.cfg != nil {
-		outputMode = strings.ToLower(strings.TrimSpace(h.cfg.Shell.OutputMode))
+		outputMode = strings.ToLower(strings.TrimSpace(h.cfg.Robo.OutputMode))
 	}
 	isInteractive := ui.IsStdoutTerminal() && (outputMode == "" || outputMode == "markdown" || outputMode == "md")
 
 	// If not interactive terminal or non-markdown output format (piped to jq / script execution)
 	if !isInteractive {
-		if assessment.IsDestructive && (h.cfg == nil || !h.cfg.Shell.YoloApproveAll) {
+		if assessment.IsDestructive && (h.cfg == nil || !h.cfg.Robo.YoloApproveAll) {
 			return ShellOutput{
 				Error:     fmt.Sprintf("destructive command aborted in non-interactive mode: %s", assessment.Warning),
 				ExitCode:  1,
@@ -111,7 +111,7 @@ func (h *ToolHandler) Handle(ctx context.Context, in ShellInput) (ShellOutput, e
 	fmt.Fprintln(os.Stderr, ui.RiskCommandCard(title, cmdStr, string(assessment.Tier), assessment.Warning))
 
 	// If YOLO approve all is explicitly enabled, execute directly without prompting
-	if h.cfg != nil && h.cfg.Shell.YoloApproveAll {
+	if h.cfg != nil && h.cfg.Robo.YoloApproveAll {
 		out, exitCode, err := ExecuteInActiveShellWithCapture(ctx, cmdStr, true)
 		recordExecution(in.Prompt, cmdStr, in.Description, out, exitCode, err)
 		if err != nil {
@@ -121,7 +121,7 @@ func (h *ToolHandler) Handle(ctx context.Context, in ShellInput) (ShellOutput, e
 	}
 
 	// If Unattended YOLO / AutoAccept mode is active:
-	if h.cfg != nil && h.cfg.Shell.AutoAccept {
+	if h.cfg != nil && h.cfg.Robo.AutoAccept {
 		if assessment.Tier == RiskTierDestructive {
 			// CIRCUIT BREAKER / HARD BRAKE: Destructive commands require explicit typed confirmation
 			confirmed, err := ui.PromptDestructiveConfirm(assessment.Warning, "yes-delete")

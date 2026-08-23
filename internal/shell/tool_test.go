@@ -24,7 +24,7 @@ func TestToolHandler_EmptyCommand(t *testing.T) {
 
 func TestToolHandler_YoloApproveAll(t *testing.T) {
 	cfg := config.NewDefaultConfig()
-	cfg.Shell.YoloApproveAll = true
+	cfg.Robo.YoloApproveAll = true
 	handler := shell.NewToolHandler(cfg)
 
 	out, err := handler.Handle(context.Background(), shell.ShellInput{
@@ -44,7 +44,7 @@ func TestToolHandler_YoloApproveAll(t *testing.T) {
 
 func TestToolHandler_NonInteractiveJSON(t *testing.T) {
 	cfg := config.NewDefaultConfig()
-	cfg.Shell.OutputMode = "json"
+	cfg.Robo.OutputMode = "json"
 	handler := shell.NewToolHandler(cfg)
 
 	out, err := handler.Handle(context.Background(), shell.ShellInput{

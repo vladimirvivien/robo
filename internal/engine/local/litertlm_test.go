@@ -9,9 +9,8 @@ import (
 )
 
 func TestLocalEngine_Interface(t *testing.T) {
-	cfg := config.LocalConfig{
-		Provider: "litertlm",
-		Model:    "test-model",
+	cfg := config.SLMConfig{
+		Model: "test-model",
 	}
 
 	e := local.New(cfg)

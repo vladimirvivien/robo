@@ -88,25 +88,25 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	// Local model inspection
-	localModelPath := engine.FindLocalModelPath(cfg.LLM.Local.Model, cfg.LLM.Local.CacheDir)
-	localLibFound := engine.IsLibDownloaded(cfg.LLM.Local.Version)
+	localModelPath := engine.FindLocalModelPath(cfg.SLM.Model, cfg.SLM.CacheDir)
+	localLibFound := engine.IsLibDownloaded(cfg.SLM.Version)
 	localStatus := LocalStatusInfo{
-		Enabled:      cfg.LLM.Local.Enabled,
-		Provider:     cfg.LLM.Local.Provider,
-		Model:        cfg.LLM.Local.Model,
-		Backend:      cfg.LLM.Local.Backend,
-		Version:      cfg.LLM.Local.Version,
+		Enabled:      true,
+		Provider:     "litertlm",
+		Model:        cfg.SLM.Model,
+		Backend:      cfg.SLM.Backend,
+		Version:      cfg.SLM.Version,
 		ModelPath:    localModelPath,
 		ModelFound:   localModelPath != "",
 		LibraryFound: localLibFound,
 	}
 
 	// Cloud model inspection
-	cloudCheck := engine.CheckCloudSetup(cfg.LLM.Cloud)
+	cloudCheck := engine.CheckCloudSetup(cfg.LLM)
 	cloudStatus := CloudStatusInfo{
-		Enabled:    cfg.LLM.Cloud.Enabled,
-		Provider:   cfg.LLM.Cloud.Provider,
-		Model:      cfg.LLM.Cloud.Model,
+		Enabled:    cfg.Robo.InferenceMode == "llm" || cfg.LLM.APIKeyEnv != "",
+		Provider:   cfg.LLM.Provider,
+		Model:      cfg.LLM.Model,
 		APIKeyEnv:  cloudCheck.APIKeyEnv,
 		Configured: cloudCheck.Configured,
 	}

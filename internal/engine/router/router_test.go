@@ -14,61 +14,42 @@ import (
 func TestRouter_DecideRoute(t *testing.T) {
 	tests := []struct {
 		name         string
-		cfg          config.LLMConfig
+		cfg          *config.Config
 		req          engine.Request
 		wantStrategy router.Strategy
 	}{
 		{
 			name: "flag local-only",
-			cfg: config.LLMConfig{
-				AutoRoute:      true,
-				MaxLocalTokens: 4096,
-				Local:          config.LocalConfig{Enabled: true},
-				Cloud:          config.CloudConfig{Enabled: true},
+			cfg: &config.Config{
+				Robo: config.RoboConfig{InferenceMode: "auto"},
+				SLM:  config.SLMConfig{MaxTokens: 4096},
 			},
-			req:          engine.Request{Prompt: "test", ForceBackend: "local-only"},
+			req:          engine.Request{Prompt: "test", ForceBackend: "slm"},
 			wantStrategy: router.StrategyLocalOnly,
 		},
 		{
 			name: "flag cloud-only",
-			cfg: config.LLMConfig{
-				AutoRoute:      true,
-				MaxLocalTokens: 4096,
-				Local:          config.LocalConfig{Enabled: true},
-				Cloud:          config.CloudConfig{Enabled: true},
+			cfg: &config.Config{
+				Robo: config.RoboConfig{InferenceMode: "auto"},
+				SLM:  config.SLMConfig{MaxTokens: 4096},
 			},
-			req:          engine.Request{Prompt: "test", ForceBackend: "cloud-only"},
+			req:          engine.Request{Prompt: "test", ForceBackend: "llm"},
 			wantStrategy: router.StrategyCloudOnly,
 		},
 		{
-			name: "config only local enabled",
-			cfg: config.LLMConfig{
-				AutoRoute:      false,
-				MaxLocalTokens: 4096,
-				Local:          config.LocalConfig{Enabled: true},
-				Cloud:          config.CloudConfig{Enabled: false},
-			},
-			req:          engine.Request{Prompt: "test"},
-			wantStrategy: router.StrategyLocalOnly,
-		},
-		{
-			name: "config only cloud enabled",
-			cfg: config.LLMConfig{
-				AutoRoute:      false,
-				MaxLocalTokens: 4096,
-				Local:          config.LocalConfig{Enabled: false},
-				Cloud:          config.CloudConfig{Enabled: true},
+			name: "config inference_mode llm",
+			cfg: &config.Config{
+				Robo: config.RoboConfig{InferenceMode: "llm"},
+				SLM:  config.SLMConfig{MaxTokens: 4096},
 			},
 			req:          engine.Request{Prompt: "test"},
 			wantStrategy: router.StrategyCloudOnly,
 		},
 		{
 			name: "heuristic images require cloud",
-			cfg: config.LLMConfig{
-				AutoRoute:      true,
-				MaxLocalTokens: 4096,
-				Local:          config.LocalConfig{Enabled: true},
-				Cloud:          config.CloudConfig{Enabled: true},
+			cfg: &config.Config{
+				Robo: config.RoboConfig{InferenceMode: "auto"},
+				SLM:  config.SLMConfig{MaxTokens: 4096},
 			},
 			req: engine.Request{
 				Prompt: "look at this image",
@@ -78,11 +59,9 @@ func TestRouter_DecideRoute(t *testing.T) {
 		},
 		{
 			name: "heuristic token limit exceeded",
-			cfg: config.LLMConfig{
-				AutoRoute:      true,
-				MaxLocalTokens: 100,
-				Local:          config.LocalConfig{Enabled: true},
-				Cloud:          config.CloudConfig{Enabled: true},
+			cfg: &config.Config{
+				Robo: config.RoboConfig{InferenceMode: "auto"},
+				SLM:  config.SLMConfig{MaxTokens: 100},
 			},
 			req: engine.Request{
 				Prompt: strings.Repeat("hello world ", 100), // ~300 tokens > 100
@@ -91,11 +70,9 @@ func TestRouter_DecideRoute(t *testing.T) {
 		},
 		{
 			name: "default auto",
-			cfg: config.LLMConfig{
-				AutoRoute:      true,
-				MaxLocalTokens: 4096,
-				Local:          config.LocalConfig{Enabled: true},
-				Cloud:          config.CloudConfig{Enabled: true},
+			cfg: &config.Config{
+				Robo: config.RoboConfig{InferenceMode: "auto"},
+				SLM:  config.SLMConfig{MaxTokens: 4096},
 			},
 			req:          engine.Request{Prompt: "simple question"},
 			wantStrategy: router.StrategyAuto,
@@ -117,12 +94,7 @@ func TestRouter_Generate_LocalSuccess(t *testing.T) {
 	local := engine.NewMockEngine("local-engine")
 	cloud := engine.NewMockEngine("cloud-engine")
 
-	cfg := config.LLMConfig{
-		AutoRoute:      true,
-		MaxLocalTokens: 4096,
-		Local:          config.LocalConfig{Enabled: true},
-		Cloud:          config.CloudConfig{Enabled: true},
-	}
+	cfg := config.NewDefaultConfig()
 	r := router.NewRouter(local, cloud, cfg)
 
 	resp, err := r.Generate(context.Background(), engine.Request{Prompt: "explain memory management"})
@@ -146,12 +118,7 @@ func TestRouter_Generate_LocalFailure_CloudEscalation(t *testing.T) {
 
 	cloud := engine.NewMockEngine("cloud-engine")
 
-	cfg := config.LLMConfig{
-		AutoRoute:      true,
-		MaxLocalTokens: 4096,
-		Local:          config.LocalConfig{Enabled: true},
-		Cloud:          config.CloudConfig{Enabled: true},
-	}
+	cfg := config.NewDefaultConfig()
 	r := router.NewRouter(local, cloud, cfg)
 
 	resp, err := r.Generate(context.Background(), engine.Request{Prompt: "explain memory management"})
@@ -173,15 +140,10 @@ func TestRouter_Generate_NoCloud_LocalFailure(t *testing.T) {
 		return nil, errors.New("local model oom")
 	}
 
-	cfg := config.LLMConfig{
-		AutoRoute:      false,
-		MaxLocalTokens: 4096,
-		Local:          config.LocalConfig{Enabled: true},
-		Cloud:          config.CloudConfig{Enabled: false},
-	}
+	cfg := config.NewDefaultConfig()
 	r := router.NewRouter(local, nil, cfg)
 
-	_, err := r.Generate(context.Background(), engine.Request{Prompt: "do not escalate", ForceBackend: "local-only"})
+	_, err := r.Generate(context.Background(), engine.Request{Prompt: "do not escalate", ForceBackend: "slm"})
 	if err == nil {
 		t.Fatal("expected error with local-only failure without cloud, got nil")
 	}
@@ -191,12 +153,7 @@ func TestRouter_GenerateStream_LocalSuccess(t *testing.T) {
 	local := engine.NewMockEngine("local-engine")
 	cloud := engine.NewMockEngine("cloud-engine")
 
-	cfg := config.LLMConfig{
-		AutoRoute:      true,
-		MaxLocalTokens: 4096,
-		Local:          config.LocalConfig{Enabled: true},
-		Cloud:          config.CloudConfig{Enabled: true},
-	}
+	cfg := config.NewDefaultConfig()
 	r := router.NewRouter(local, cloud, cfg)
 
 	stream, err := r.GenerateStream(context.Background(), engine.Request{Prompt: "hello stream"})
@@ -228,12 +185,7 @@ func TestRouter_GenerateStream_ImmediateFailure_CloudEscalation(t *testing.T) {
 
 	cloud := engine.NewMockEngine("cloud-engine")
 
-	cfg := config.LLMConfig{
-		AutoRoute:      true,
-		MaxLocalTokens: 4096,
-		Local:          config.LocalConfig{Enabled: true},
-		Cloud:          config.CloudConfig{Enabled: true},
-	}
+	cfg := config.NewDefaultConfig()
 	r := router.NewRouter(local, cloud, cfg)
 
 	stream, err := r.GenerateStream(context.Background(), engine.Request{Prompt: "escalate this stream"})
@@ -258,9 +210,7 @@ func TestRouter_Close(t *testing.T) {
 	local := engine.NewMockEngine("local")
 	cloud := engine.NewMockEngine("cloud")
 
-	r := router.NewRouter(local, cloud, config.LLMConfig{
-		Cloud: config.CloudConfig{Enabled: true},
-	})
+	r := router.NewRouter(local, cloud, config.NewDefaultConfig())
 	if err := r.Close(); err != nil {
 		t.Fatalf("Close failed: %v", err)
 	}
@@ -281,12 +231,7 @@ func TestRouter_ActiveEscalateSignal_Unary(t *testing.T) {
 		return &engine.Response{Text: "cloud solution for complex task"}, nil
 	}
 
-	cfg := config.LLMConfig{
-		AutoRoute:      true,
-		MaxLocalTokens: 4096,
-		Local:          config.LocalConfig{Enabled: true},
-		Cloud:          config.CloudConfig{Enabled: true},
-	}
+	cfg := config.NewDefaultConfig()
 	r := router.NewRouter(local, cloud, cfg)
 
 	resp, err := r.Generate(context.Background(), engine.Request{Prompt: "complex architecture"})
@@ -316,12 +261,7 @@ func TestRouter_ActiveEscalateSignal_Stream(t *testing.T) {
 		return ch, nil
 	}
 
-	cfg := config.LLMConfig{
-		AutoRoute:      true,
-		MaxLocalTokens: 4096,
-		Local:          config.LocalConfig{Enabled: true},
-		Cloud:          config.CloudConfig{Enabled: true},
-	}
+	cfg := config.NewDefaultConfig()
 	r := router.NewRouter(local, cloud, cfg)
 
 	stream, err := r.GenerateStream(context.Background(), engine.Request{Prompt: "complex stream"})

@@ -15,13 +15,13 @@ import (
 
 type openAIAdapter struct {
 	client      *http.Client
-	cfg         config.CloudConfig
+	cfg         config.LLMConfig
 	apiKey      string
 	provider    string
 	toolHandler *shell.ToolHandler
 }
 
-func newOpenAIAdapter(client *http.Client, cfg config.CloudConfig, apiKey string, provider string, toolHandler *shell.ToolHandler) *openAIAdapter {
+func newOpenAIAdapter(client *http.Client, cfg config.LLMConfig, apiKey string, provider string, toolHandler *shell.ToolHandler) *openAIAdapter {
 	return &openAIAdapter{
 		client:      client,
 		cfg:         cfg,

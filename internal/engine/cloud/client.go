@@ -21,14 +21,14 @@ type Provider interface {
 
 // Engine implements engine.Engine using native HTTP REST clients (zero third-party SDKs).
 type Engine struct {
-	cfg         config.CloudConfig
+	cfg         config.LLMConfig
 	fullCfg     *config.Config
 	httpClient  *http.Client
 	toolHandler *shell.ToolHandler
 }
 
 // New creates a new cloud engine instance.
-func New(cfg config.CloudConfig, fullCfg ...*config.Config) *Engine {
+func New(cfg config.LLMConfig, fullCfg ...*config.Config) *Engine {
 	var fc *config.Config
 	if len(fullCfg) > 0 {
 		fc = fullCfg[0]

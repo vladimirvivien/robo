@@ -68,8 +68,8 @@ func runGet(cmd *cobra.Command, args []string) error {
 	targetCacheDir := flagGetCacheDir
 	if targetCacheDir == "" {
 		cfg, _ := config.Load(cfgFile)
-		if cfg != nil && cfg.LLM.Local.CacheDir != "" {
-			targetCacheDir = cfg.LLM.Local.CacheDir
+		if cfg != nil && cfg.SLM.CacheDir != "" {
+			targetCacheDir = cfg.SLM.CacheDir
 		}
 	}
 

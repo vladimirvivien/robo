@@ -26,19 +26,11 @@ const (
 type Router struct {
 	local engine.Engine
 	cloud engine.Engine
-	cfg   config.LLMConfig
+	cfg   *config.Config
 }
 
 // NewRouter creates a new hybrid Router instance.
-func NewRouter(local engine.Engine, cloud engine.Engine, cfg config.LLMConfig) *Router {
-	if cfg.MaxLocalTokens <= 0 {
-		cfg.MaxLocalTokens = 4096
-	}
-
-	if !cfg.Cloud.Enabled {
-		cloud = nil
-	}
-
+func NewRouter(local engine.Engine, cloud engine.Engine, cfg *config.Config) *Router {
 	return &Router{
 		local: local,
 		cloud: cloud,
@@ -55,21 +47,18 @@ func (r *Router) Name() string {
 func (r *Router) DecideRoute(req engine.Request) (Strategy, string) {
 	// 1. Explicit request flag overrides
 	switch strings.ToLower(req.ForceBackend) {
-	case "local", "local-only", "--local", "--local-only":
-		return StrategyLocalOnly, "explicit flag: --local-only"
-	case "cloud", "cloud-only", "--cloud", "--cloud-only":
-		return StrategyCloudOnly, "explicit flag: --cloud-only"
+	case "slm", "local", "local-only", "--local", "--local-only":
+		return StrategyLocalOnly, "explicit mode: slm"
+	case "llm", "cloud", "cloud-only", "--cloud", "--cloud-only":
+		return StrategyCloudOnly, "explicit mode: llm"
 	}
 
-	// 2. Disabled model checks
-	if !r.cfg.Local.Enabled && r.cfg.Cloud.Enabled {
-		return StrategyCloudOnly, "configuration: local model is disabled"
+	// 2. Configured inference mode
+	if r.cfg != nil && r.cfg.Robo.InferenceMode == "llm" {
+		return StrategyCloudOnly, "configuration: inference_mode is llm"
 	}
-	if !r.cfg.Cloud.Enabled {
-		return StrategyLocalOnly, "configuration: cloud model is disabled"
-	}
-	if !r.cfg.Local.Enabled && !r.cfg.Cloud.Enabled {
-		return StrategyLocalOnly, "configuration: local default"
+	if r.cloud == nil {
+		return StrategyLocalOnly, "configuration: cloud engine not active"
 	}
 
 	// 3. Multimodal image attachments require cloud vision models
@@ -79,11 +68,15 @@ func (r *Router) DecideRoute(req engine.Request) (Strategy, string) {
 
 	// 4. Context size exceeding local token ceiling
 	estTokens := EstimateTokens(req)
-	if r.cfg.MaxLocalTokens > 0 && estTokens > r.cfg.MaxLocalTokens {
-		return StrategyCloudOnly, fmt.Sprintf("heuristic: context size (%d tokens) exceeds local limit (%d)", estTokens, r.cfg.MaxLocalTokens)
+	maxTokens := 4096
+	if r.cfg != nil && r.cfg.SLM.MaxTokens > 0 {
+		maxTokens = r.cfg.SLM.MaxTokens
+	}
+	if maxTokens > 0 && estTokens > maxTokens {
+		return StrategyCloudOnly, fmt.Sprintf("heuristic: context size (%d tokens) exceeds local limit (%d)", estTokens, maxTokens)
 	}
 
-	// 5. Default auto-routing (both enabled or auto_route: true)
+	// 5. Default auto-routing
 	return StrategyAuto, "strategy: automatic intelligent routing"
 }
 
@@ -102,8 +95,8 @@ func (r *Router) Generate(ctx context.Context, req engine.Request) (*engine.Resp
 		return r.local.Generate(ctx, req)
 
 	case StrategyCloudOnly:
-		if r.cloud == nil || !r.cfg.Cloud.Enabled {
-			return nil, errors.New("router: cloud engine is not available or disabled")
+		if r.cloud == nil {
+			return nil, errors.New("router: cloud engine is not available or configured")
 		}
 		return r.cloud.Generate(ctx, req)
 
@@ -114,12 +107,12 @@ func (r *Router) Generate(ctx context.Context, req engine.Request) (*engine.Resp
 			resp, err := r.local.Generate(ctx, req)
 			if err == nil {
 				// If local model actively signals that task exceeds local capacity, delegate to cloud if enabled
-				if strings.HasPrefix(strings.TrimSpace(resp.Text), EscalateToCloudSignal) && r.cloud != nil && r.cfg.Cloud.Enabled {
+				if strings.HasPrefix(strings.TrimSpace(resp.Text), EscalateToCloudSignal) && r.cloud != nil {
 					return r.cloud.Generate(ctx, req)
 				}
 				return resp, nil
 			}
-			if r.cloud == nil || !r.cfg.Cloud.Enabled {
+			if r.cloud == nil {
 				return nil, err
 			}
 			// Attempt cloud fallback on error if cloud is enabled
@@ -129,7 +122,7 @@ func (r *Router) Generate(ctx context.Context, req engine.Request) (*engine.Resp
 			}
 			return nil, fmt.Errorf("local execution failed (%w); cloud fallback also failed: %v", err, cloudErr)
 		}
-		if r.cloud == nil || !r.cfg.Cloud.Enabled {
+		if r.cloud == nil {
 			return nil, errors.New("router: no active engine available")
 		}
 		return r.cloud.Generate(ctx, req)
@@ -152,18 +145,15 @@ func (r *Router) GenerateStream(ctx context.Context, req engine.Request) (<-chan
 		return r.forwardWithEscalation(ctx, stream, nil, req)
 
 	case StrategyCloudOnly:
-		if r.cloud == nil || !r.cfg.Cloud.Enabled {
-			return nil, errors.New("router: cloud engine is not available or disabled")
+		if r.cloud == nil {
+			return nil, errors.New("router: cloud engine is not available or configured")
 		}
 		return r.cloud.GenerateStream(ctx, req)
 
 	case StrategyAuto:
 		fallthrough
 	default:
-		var fallbackEngine engine.Engine
-		if r.cfg.Cloud.Enabled {
-			fallbackEngine = r.cloud
-		}
+		fallbackEngine := r.cloud
 
 		if r.local != nil {
 			stream, err := r.local.GenerateStream(ctx, req)

@@ -118,19 +118,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("initialization cancelled: %w", err)
 		}
 		if cloudPrefs.ConfigureCloud {
-			cfg.LLM.Cloud.Enabled = true
-			cfg.LLM.Cloud.Provider = cloudPrefs.Provider
-			cfg.LLM.Cloud.Model = cloudPrefs.Model
-			cfg.LLM.Cloud.APIKeyEnv = cloudPrefs.APIKeyEnv
-		} else {
-			cfg.LLM.Cloud.Enabled = false
+			cfg.LLM.Provider = cloudPrefs.Provider
+			cfg.LLM.Model = cloudPrefs.Model
+			cfg.LLM.APIKeyEnv = cloudPrefs.APIKeyEnv
 		}
 	}
 
-	cfg.LLM.Local.Version = selectedVersion
-	cfg.LLM.Local.Model = selectedModel
-	cfg.LLM.Local.Backend = selectedBackend
-	cfg.LLM.Local.AutoDownload = true
+	cfg.SLM.Version = selectedVersion
+	cfg.SLM.Model = selectedModel
+	cfg.SLM.Backend = selectedBackend
+	cfg.SLM.AutoDownload = true
 
 	// 3. Save default configuration file to disk
 	if err := cfg.Save(targetConfigPath); err != nil {
@@ -146,7 +143,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// 4. Download LiteRT-LM shared libraries and selected Gemma model
-	_, _, err := engine.EnsureLocalSetupWithProgress(ctx, cfg.LLM.Local)
+	_, _, err := engine.EnsureLocalSetupWithProgress(ctx, cfg.SLM)
 	if err != nil {
 		return fmt.Errorf("setup dependencies: %w", err)
 	}
@@ -161,10 +158,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 		summaryLines := []string{
 			fmt.Sprintf("• Config:   %s", targetConfigPath),
-			fmt.Sprintf("• Local:    %s (LiteRT-LM %s, %s)", selectedModel, cfg.LLM.Local.Version, cfg.LLM.Local.Backend),
+			fmt.Sprintf("• Local:    %s (LiteRT-LM %s, %s)", selectedModel, cfg.SLM.Version, cfg.SLM.Backend),
+			fmt.Sprintf("• Inference Mode: %s", cfg.Robo.InferenceMode),
 		}
-		if cfg.LLM.Cloud.Enabled {
-			summaryLines = append(summaryLines, fmt.Sprintf("• Cloud:    %s (%s)", cfg.LLM.Cloud.Model, cfg.LLM.Cloud.APIKeyEnv))
+		if cfg.LLM.APIKeyEnv != "" {
+			summaryLines = append(summaryLines, fmt.Sprintf("• Cloud:    %s (%s)", cfg.LLM.Model, cfg.LLM.APIKeyEnv))
 		}
 		summaryLines = append(summaryLines, fmt.Sprintf("\nTry running:\n  %s", exampleCmd))
 

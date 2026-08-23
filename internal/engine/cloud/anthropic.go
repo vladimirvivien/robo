@@ -15,12 +15,12 @@ import (
 
 type anthropicAdapter struct {
 	client      *http.Client
-	cfg         config.CloudConfig
+	cfg         config.LLMConfig
 	apiKey      string
 	toolHandler *shell.ToolHandler
 }
 
-func newAnthropicAdapter(client *http.Client, cfg config.CloudConfig, apiKey string, toolHandler *shell.ToolHandler) *anthropicAdapter {
+func newAnthropicAdapter(client *http.Client, cfg config.LLMConfig, apiKey string, toolHandler *shell.ToolHandler) *anthropicAdapter {
 	return &anthropicAdapter{
 		client:      client,
 		cfg:         cfg,

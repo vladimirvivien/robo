@@ -46,10 +46,10 @@ func TestInitCmd_NonInteractive(t *testing.T) {
 	})
 
 	cfg := config.NewDefaultConfig()
-	cfg.LLM.Local.Version = "v0.16.0"
-	cfg.LLM.Local.Model = "litert-community/gemma-4-E4B-it-litert-lm"
-	cfg.LLM.Local.Backend = "cpu"
-	cfg.LLM.Local.AutoDownload = false // Don't download large weights during unit test
+	cfg.SLM.Version = "v0.16.0"
+	cfg.SLM.Model = "litert-community/gemma-4-E4B-it-litert-lm"
+	cfg.SLM.Backend = "cpu"
+	cfg.SLM.AutoDownload = false // Don't download large weights during unit test
 
 	if err := cfg.Save(targetConfig); err != nil {
 		t.Fatalf("save config: %v", err)
@@ -59,13 +59,13 @@ func TestInitCmd_NonInteractive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	if loaded.LLM.Local.Version != "v0.16.0" {
-		t.Errorf("expected version 'v0.16.0', got %q", loaded.LLM.Local.Version)
+	if loaded.SLM.Version != "v0.16.0" {
+		t.Errorf("expected version 'v0.16.0', got %q", loaded.SLM.Version)
 	}
-	if loaded.LLM.Local.Model != "litert-community/gemma-4-E4B-it-litert-lm" {
-		t.Errorf("expected model 'litert-community/gemma-4-E4B-it-litert-lm', got %q", loaded.LLM.Local.Model)
+	if loaded.SLM.Model != "litert-community/gemma-4-E4B-it-litert-lm" {
+		t.Errorf("expected model 'litert-community/gemma-4-E4B-it-litert-lm', got %q", loaded.SLM.Model)
 	}
-	if loaded.LLM.Local.Backend != "cpu" {
-		t.Errorf("expected backend 'cpu', got %q", loaded.LLM.Local.Backend)
+	if loaded.SLM.Backend != "cpu" {
+		t.Errorf("expected backend 'cpu', got %q", loaded.SLM.Backend)
 	}
 }

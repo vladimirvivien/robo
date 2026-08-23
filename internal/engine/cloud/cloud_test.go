@@ -13,7 +13,7 @@ import (
 )
 
 func TestCloudEngine_Interface(t *testing.T) {
-	cfg := config.CloudConfig{
+	cfg := config.LLMConfig{
 		Provider: "googleai",
 		Model:    "gemini-2.5-flash",
 	}
@@ -32,7 +32,7 @@ func TestCloudEngine_MissingAPIKey(t *testing.T) {
 	t.Setenv("GEMINI_API_KEY", "")
 	t.Setenv("GOOGLE_API_KEY", "")
 
-	cfg := config.CloudConfig{
+	cfg := config.LLMConfig{
 		Provider: "googleai",
 		Model:    "gemini-2.5-flash",
 	}
@@ -51,7 +51,7 @@ func TestCloudEngine_OllamaNoKey(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := config.CloudConfig{
+	cfg := config.LLMConfig{
 		Provider: "ollama",
 		Model:    "llama3.3",
 		BaseURL:  server.URL,
@@ -81,7 +81,7 @@ func TestCloudEngine_GeminiGenerate(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := config.CloudConfig{
+	cfg := config.LLMConfig{
 		Provider: "googleai",
 		Model:    "gemini-2.5-flash",
 		BaseURL:  server.URL,
@@ -122,7 +122,7 @@ func TestCloudEngine_GeminiStream(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := config.CloudConfig{
+	cfg := config.LLMConfig{
 		Provider: "googleai",
 		Model:    "gemini-2.5-flash",
 		BaseURL:  server.URL,
@@ -169,7 +169,7 @@ func TestCloudEngine_OpenAIGenerate(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := config.CloudConfig{
+	cfg := config.LLMConfig{
 		Provider: "openai",
 		Model:    "gpt-4o",
 		BaseURL:  server.URL,
@@ -213,7 +213,7 @@ func TestCloudEngine_OpenAIStream(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := config.CloudConfig{
+	cfg := config.LLMConfig{
 		Provider: "openai",
 		Model:    "gpt-4o",
 		BaseURL:  server.URL,
@@ -251,7 +251,7 @@ func TestCloudEngine_AnthropicGenerate(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := config.CloudConfig{
+	cfg := config.LLMConfig{
 		Provider: "anthropic",
 		Model:    "claude-3-5-sonnet",
 		BaseURL:  server.URL,
