@@ -3,11 +3,14 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/vladimirvivien/robo/internal/config"
+	"github.com/vladimirvivien/robo/internal/daemon"
 	"github.com/vladimirvivien/robo/internal/engine"
+	"github.com/vladimirvivien/robo/internal/store"
 	"github.com/vladimirvivien/robo/internal/ui"
 )
 
@@ -118,7 +121,22 @@ func runInit(cmd *cobra.Command, args []string) error {
 	cfg.SLM.Backend = selectedBackend
 	cfg.SLM.AutoDownload = true
 
-	// 3. Save default configuration file to disk
+	// 3. Stop any running robod daemon instance
+	stopped, _ := daemon.StopDaemon(ctx)
+	if stopped && isInteractive {
+		fmt.Println(ui.Muted("  • Stopped active robod daemon instance"))
+	}
+
+	// 4. Refresh SQLite database store
+	dbPath := filepath.Join(filepath.Dir(targetConfigPath), "robo.db")
+	if err := store.ResetDB(dbPath); err != nil {
+		return fmt.Errorf("refresh database: %w", err)
+	}
+	if isInteractive {
+		fmt.Println(ui.Muted("  • Refreshed SQLite execution database"))
+	}
+
+	// 5. Save default configuration file to disk
 	if err := cfg.Save(targetConfigPath); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
@@ -131,13 +149,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Configuration saved to %s\n", targetConfigPath)
 	}
 
-	// 4. Download LiteRT-LM shared libraries and selected Gemma model
+	// 6. Download LiteRT-LM shared libraries and selected Gemma model
 	_, _, err := engine.EnsureLocalSetupWithProgress(ctx, cfg.SLM)
 	if err != nil {
 		return fmt.Errorf("setup dependencies: %w", err)
 	}
 
-	// 5. Completion notice
+	// 7. Completion notice
 	if isInteractive {
 		fmt.Println()
 		exampleCmd := `robo "which process is consuming the most cpu"`

@@ -70,6 +70,23 @@ func Open(dbPath string) (*Store, error) {
 	return s, nil
 }
 
+// ResetDB removes any existing SQLite database files (including WAL/SHM) at dbPath and initializes a fresh schema.
+func ResetDB(dbPath string) error {
+	if dbPath == "" {
+		dbPath = DefaultDBPath()
+	}
+
+	_ = os.Remove(dbPath)
+	_ = os.Remove(dbPath + "-wal")
+	_ = os.Remove(dbPath + "-shm")
+
+	s, err := Open(dbPath)
+	if err != nil {
+		return fmt.Errorf("reset sqlite db: %w", err)
+	}
+	return s.Close()
+}
+
 func (s *Store) initSchema() error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS executions (

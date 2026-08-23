@@ -138,47 +138,25 @@ func runDaemonStart(cmd *cobra.Command, args []string) error {
 }
 
 func runDaemonStop(cmd *cobra.Command, args []string) error {
-	state, err := daemon.LoadState(daemon.StatePath())
-	shutdownURL := config.DefaultRobodURL + "/v1/shutdown"
+	state, _ := daemon.LoadState(daemon.StatePath())
 	var pid int
-
-	if err == nil {
-		shutdownURL = fmt.Sprintf("%s/v1/shutdown", state.URL)
+	if state != nil {
 		pid = state.PID
 	}
 
-	// Send shutdown POST request
-	req, err := http.NewRequestWithContext(cmd.Context(), http.MethodPost, shutdownURL, nil)
+	stopped, err := daemon.StopDaemon(cmd.Context())
 	if err != nil {
-		fmt.Println("robod is not running")
-		return nil
+		return err
 	}
 
-	client := &http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		_ = daemon.RemoveState(daemon.StatePath())
-		fmt.Println("robod is not running")
-		return nil
-	}
-	defer func() { _ = resp.Body.Close() }()
-	_ = daemon.RemoveState(daemon.StatePath())
-
-	// Wait briefly for daemon socket to terminate
-	healthURL := config.DefaultRobodURL + "/health"
-	for range 10 {
-		time.Sleep(50 * time.Millisecond)
-		checkResp, checkErr := client.Get(healthURL)
-		if checkErr != nil {
-			break
+	if stopped {
+		if pid > 0 {
+			fmt.Printf("robod daemon stopped (PID: %d)\n", pid)
+		} else {
+			fmt.Println("robod daemon stopped")
 		}
-		_ = checkResp.Body.Close()
-	}
-
-	if pid > 0 {
-		fmt.Printf("robod daemon stopped (PID: %d)\n", pid)
 	} else {
-		fmt.Println("robod daemon stopped")
+		fmt.Println("robod is not running")
 	}
 	return nil
 }

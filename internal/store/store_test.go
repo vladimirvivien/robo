@@ -104,3 +104,44 @@ func TestStore_RecordAndGetLastExecution(t *testing.T) {
 		t.Errorf("expected most recent to be ssh-add, got %s", recent[0].Command)
 	}
 }
+
+func TestStore_ResetDB(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "reset_robo.db")
+
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+
+	ctx := context.Background()
+	exec := store.Execution{
+		Prompt:   "hello",
+		Command:  "echo hello",
+		ExitCode: 0,
+		Cwd:      dir,
+		Shell:    "bash",
+	}
+	if err := s.RecordExecution(ctx, exec); err != nil {
+		t.Fatalf("RecordExecution failed: %v", err)
+	}
+	_ = s.Close()
+
+	if err := store.ResetDB(dbPath); err != nil {
+		t.Fatalf("ResetDB failed: %v", err)
+	}
+
+	s2, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("Open after ResetDB failed: %v", err)
+	}
+	defer func() { _ = s2.Close() }()
+
+	recent, err := s2.GetRecentExecutions(ctx, 10)
+	if err != nil {
+		t.Fatalf("GetRecentExecutions failed: %v", err)
+	}
+	if len(recent) != 0 {
+		t.Fatalf("expected 0 executions after reset, got %d", len(recent))
+	}
+}

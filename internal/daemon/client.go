@@ -352,3 +352,55 @@ func (c *Client) defaultLauncher() error {
 	DetachCmd(cmd)
 	return cmd.Start()
 }
+
+// StopDaemon attempts to shut down any active robod daemon instance gracefully.
+// Returns true if a running daemon instance was found and shut down.
+func StopDaemon(ctx context.Context, customStatePath ...string) (bool, error) {
+	statePath := StatePath()
+	if len(customStatePath) > 0 && customStatePath[0] != "" {
+		statePath = customStatePath[0]
+	}
+
+	state, err := LoadState(statePath)
+	if err != nil {
+		return tryShutdownURL(ctx, config.DefaultRobodURL, statePath)
+	}
+
+	return tryShutdownURL(ctx, state.URL, statePath)
+}
+
+func tryShutdownURL(ctx context.Context, baseURL, statePath string) (bool, error) {
+	if baseURL == "" {
+		baseURL = config.DefaultRobodURL
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+	shutdownURL := baseURL + "/v1/shutdown"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, shutdownURL, nil)
+	if err != nil {
+		_ = RemoveState(statePath)
+		return false, nil
+	}
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		_ = RemoveState(statePath)
+		return false, nil
+	}
+	_ = resp.Body.Close()
+	_ = RemoveState(statePath)
+
+	// Wait briefly for daemon socket to terminate
+	healthURL := baseURL + "/health"
+	for range 10 {
+		time.Sleep(50 * time.Millisecond)
+		checkResp, checkErr := client.Get(healthURL)
+		if checkErr != nil {
+			break
+		}
+		_ = checkResp.Body.Close()
+	}
+
+	return true, nil
+}

@@ -106,6 +106,11 @@ func BadgeError(text string) string {
 	return styleErrorBadge.Render(text)
 }
 
+// Muted renders text in muted secondary styling.
+func Muted(text string) string {
+	return styleMuted.Render(text)
+}
+
 // Card wraps content in a styled rounded border box with automatic width bounding.
 func Card(title, content, footer string) string {
 	return CardWithWidth(title, content, footer, CappedWidth(0))
