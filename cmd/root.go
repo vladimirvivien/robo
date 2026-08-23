@@ -200,40 +200,32 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		modelName = cfg.LLM.Cloud.Model
 	}
 
-	formatter, err := ui.NewFormatter(outputFormat, isInteractive, ui.TerminalWidth())
-	if err != nil {
-		return err
-	}
-
-	lastCmd := ""
-	lastExplanation := ""
-	lastOut := res.FinalResponse
-	if len(res.Steps) > 0 {
-		lastCmd = res.Steps[len(res.Steps)-1].Command
-		lastExplanation = res.Steps[len(res.Steps)-1].Description
-		if res.FinalResponse == "" {
-			lastOut = res.Steps[len(res.Steps)-1].Output
+	sessionSteps := make([]ui.TrajectoryStep, len(res.Steps))
+	for i, s := range res.Steps {
+		sessionSteps[i] = ui.TrajectoryStep{
+			Step:        s.Step,
+			Command:     s.Command,
+			Description: s.Description,
+			Output:      s.Output,
+			Error:       s.Error,
+			ExitCode:    s.ExitCode,
+			Executed:    s.Executed,
+			RiskTier:    s.RiskTier,
+			RiskScore:   s.RiskScore,
 		}
 	}
 
-	outputData := ui.OutputData{
-		Response:    res.FinalResponse,
-		Explanation: lastExplanation,
-		Command:     lastCmd,
-		Output:      lastOut,
-		Provider:    providerName,
-		Model:       modelName,
-		Local:       usedLocal,
+	sessionData := ui.SessionOutputData{
+		Goal:          res.Goal,
+		Status:        res.Status,
+		TotalSteps:    res.TotalSteps,
+		Steps:         sessionSteps,
+		FinalResponse: res.FinalResponse,
+		Provider:      providerName,
+		Model:         modelName,
+		Local:         usedLocal,
 	}
 
-	// For non-interactive or structured formats, format output cleanly
-	if !isInteractive || outputFormat == "json" || outputFormat == "code" || outputFormat == "plain" {
-		if err := formatter.Format(os.Stdout, outputData); err != nil {
-			return err
-		}
-	} else if res.FinalResponse != "" {
-		fmt.Println(res.FinalResponse)
-	}
-
-	return nil
+	trajFormatter := ui.NewTrajectoryFormatter(outputFormat, isInteractive, ui.TerminalWidth())
+	return trajFormatter.FormatSession(os.Stdout, sessionData)
 }

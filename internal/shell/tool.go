@@ -101,14 +101,14 @@ func (h *ToolHandler) Handle(ctx context.Context, in ShellInput) (ShellOutput, e
 		return ShellOutput{Output: out, ExitCode: 0, Tier: assessment.Tier, RiskScore: assessment.Score}, nil
 	}
 
-	// Interactive Mode: Display 3-Tier Risk Command Card
-	fmt.Println()
+	// Interactive Mode: Display 3-Tier Risk Command Card on os.Stderr
+	fmt.Fprintln(os.Stderr)
 	title := "🤖 Proposed Shell Command"
 	desc := strings.TrimSpace(in.Description)
 	if desc != "" && !strings.Contains(desc, "\n") && len(desc) < 80 {
 		title = fmt.Sprintf("🤖 Proposed: %s", desc)
 	}
-	fmt.Println(ui.RiskCommandCard(title, cmdStr, string(assessment.Tier), assessment.Warning))
+	fmt.Fprintln(os.Stderr, ui.RiskCommandCard(title, cmdStr, string(assessment.Tier), assessment.Warning))
 
 	// If YOLO approve all is explicitly enabled, execute directly without prompting
 	if h.cfg != nil && h.cfg.Shell.YoloApproveAll {
@@ -126,7 +126,7 @@ func (h *ToolHandler) Handle(ctx context.Context, in ShellInput) (ShellOutput, e
 			// CIRCUIT BREAKER / HARD BRAKE: Destructive commands require explicit typed confirmation
 			confirmed, err := ui.PromptDestructiveConfirm(assessment.Warning, "yes-delete")
 			if err != nil || !confirmed {
-				fmt.Println(ui.BadgeWarning("Execution aborted: destructive confirmation not confirmed"))
+				fmt.Fprintln(os.Stderr, ui.BadgeWarning("Execution aborted: destructive confirmation not confirmed"))
 				return ShellOutput{ExitCode: 1, Cancelled: true, Tier: assessment.Tier, RiskScore: assessment.Score}, nil
 			}
 		} else {
@@ -142,14 +142,14 @@ func (h *ToolHandler) Handle(ctx context.Context, in ShellInput) (ShellOutput, e
 		// Standard Interactive Mode: Destructive Confirmation Gate
 		confirmed, err := ui.PromptDestructiveConfirm(assessment.Warning, "yes-delete")
 		if err != nil || !confirmed {
-			fmt.Println(ui.BadgeWarning("Execution aborted: destructive confirmation not confirmed"))
+			fmt.Fprintln(os.Stderr, ui.BadgeWarning("Execution aborted: destructive confirmation not confirmed"))
 			return ShellOutput{ExitCode: 1, Cancelled: true, Tier: assessment.Tier, RiskScore: assessment.Score}, nil
 		}
 	} else {
 		// Standard Interactive Mode: [Run] [Edit] [Cancel] Review Prompt
 		action, editedCmd, err := ui.PromptCommandReview(cmdStr)
 		if err != nil || action == ui.ActionCancel {
-			fmt.Println("Execution cancelled.")
+			fmt.Fprintln(os.Stderr, "Execution cancelled.")
 			return ShellOutput{ExitCode: 0, Cancelled: true, Tier: assessment.Tier, RiskScore: assessment.Score}, nil
 		}
 		if editedCmd != cmdStr {
