@@ -17,20 +17,36 @@ An small AI assistant for system operation in the terminal.
 
 ---
 
-## Installation & Build
+## Installation
 
-### Prerequisites
-* Go 1.24+ and git
+### 1. Pre-Built Binaries (Recommended)
+Download the latest release archive for your platform from [GitHub Releases](https://github.com/vladimirvivien/robo/releases/latest):
 
-### Build from Source
+* **Linux / macOS (`.tar.gz`)**:
+  ```bash
+  # Extract and place binary in your PATH
+  tar -xzf robo_*_linux_amd64.tar.gz
+  sudo mv robo /usr/local/bin/
+  ```
+
+* **Windows (`.zip`)**:
+  ```powershell
+  # Extract archive in PowerShell
+  Expand-Archive -Path robo_*_windows_amd64.zip -DestinationPath .
+  ```
+
+### 2. Build from Source
+**Prerequisites:** Go 1.24+ and Git
+
 ```bash
 # Clone the repository
 git clone https://github.com/vladimirvivien/robo.git
 cd robo
 
+# Build binary into ./bin/robo
 make build
 
-# Or, build and add to $PATH
+# Or install directly into $GOPATH/bin
 go install .
 
 # Verify installation

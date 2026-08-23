@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build linux
 
 package ui
 
@@ -8,7 +8,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// RestoreCookedMode restores standard terminal mode on POSIX systems.
+// RestoreCookedMode restores standard terminal mode on Linux systems.
 func RestoreCookedMode() {
 	if termios, err := unix.IoctlGetTermios(int(os.Stdin.Fd()), unix.TCGETS); err == nil {
 		termios.Lflag |= unix.ECHO | unix.ICANON | unix.ISIG
