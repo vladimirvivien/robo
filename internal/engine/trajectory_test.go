@@ -128,3 +128,20 @@ func TestTrajectoryManager_TokenBudgetConstraint(t *testing.T) {
 		t.Errorf("expected trajectory prompt to stay under 1,200 tokens, got %d tokens (~%d chars)", approxTokens, len(formatted))
 	}
 }
+
+func TestTrajectoryManager_EmptyOutput(t *testing.T) {
+	tm := engine.NewTrajectoryManager()
+	tm.AddStep(engine.StepRecord{
+		Step:        1,
+		Command:     "Get-Service | Where-Object {$_.Name -like '*robo*'}",
+		Description: "Check if robo service exists",
+		Output:      "",
+		ExitCode:    0,
+		Executed:    true,
+	})
+
+	formatted := tm.FormatPromptContext("Is the a service running called robo?")
+	if !strings.Contains(formatted, "(empty output - 0 matching records or lines produced)") {
+		t.Errorf("expected explicit empty output indication, got:\n%s", formatted)
+	}
+}

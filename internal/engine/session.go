@@ -184,6 +184,21 @@ func (r *SessionRunner) Run(ctx context.Context, goal string) (*SessionResult, e
 			return result, nil
 		}
 
+		// 3b. Loop Detection: Check if the exact same command was already executed in the prior step
+		if lastStep := tm.LastStep(); lastStep != nil && lastStep.Executed {
+			if strings.TrimSpace(strings.ToLower(cmdStr)) == strings.TrimSpace(strings.ToLower(lastStep.Command)) {
+				if strings.TrimSpace(lastStep.Output) == "" {
+					result.FinalResponse = fmt.Sprintf("The query `%s` was executed and produced no matching output (0 matches found).", lastStep.Command)
+				} else {
+					result.FinalResponse = fmt.Sprintf("The command `%s` was executed with output:\n\n%s", lastStep.Command, lastStep.Output)
+				}
+				result.Status = "completed"
+				result.TotalSteps = tm.Count()
+				result.Steps = tm.Steps()
+				return result, nil
+			}
+		}
+
 		// 4. Handle Step Execution
 		var modelRisk string
 		var isDestructive bool

@@ -71,6 +71,8 @@ func (tm *TrajectoryManager) FormatPromptContext(goal string) string {
 			summaryOut := summarizeSingleLine(s.Output)
 			if summaryOut != "" {
 				fmt.Fprintf(&sb, "• Step %d: `%s` ──> %s [Output: %s]\n", s.Step, s.Command, statusStr, summaryOut)
+			} else if s.ExitCode == 0 {
+				fmt.Fprintf(&sb, "• Step %d: `%s` ──> %s [Output: (empty - 0 matches)]\n", s.Step, s.Command, statusStr)
 			} else {
 				fmt.Fprintf(&sb, "• Step %d: `%s` ──> %s\n", s.Step, s.Command, statusStr)
 			}
@@ -91,6 +93,8 @@ func (tm *TrajectoryManager) FormatPromptContext(goal string) string {
 			}
 			if strings.TrimSpace(s.Output) != "" {
 				fmt.Fprintf(&sb, "  Output:\n%s\n", TruncateOutput(s.Output, DefaultHeadLines, DefaultTailLines))
+			} else if s.ExitCode == 0 {
+				sb.WriteString("  Output: (empty output - 0 matching records or lines produced)\n")
 			}
 			if strings.TrimSpace(s.Error) != "" {
 				fmt.Fprintf(&sb, "  Error:\n%s\n", TruncateOutput(s.Error, 5, 5))
@@ -100,8 +104,9 @@ func (tm *TrajectoryManager) FormatPromptContext(goal string) string {
 	}
 
 	sb.WriteString("Evaluate progress toward the goal:\n")
-	sb.WriteString("- If another command is required, invoke \"execute_shell\" with the next specific command.\n")
-	sb.WriteString("- If the goal is satisfied, provide the final concise answer/summary directly in markdown without calling \"execute_shell\".\n")
+	sb.WriteString("- If the previous query returned empty output (0 matching lines/services/processes), conclude that no matches exist.\n")
+	sb.WriteString("- Do NOT re-execute the same query command.\n")
+	sb.WriteString("- If the goal is satisfied or a conclusion is reached, provide the final answer directly in markdown without calling \"execute_shell\".\n")
 
 	return sb.String()
 }

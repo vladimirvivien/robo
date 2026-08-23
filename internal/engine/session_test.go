@@ -153,3 +153,41 @@ func TestSessionRunner_OneShot(t *testing.T) {
 		t.Errorf("expected exactly 1 model call in OneShot mode, got %d", mock.callCount)
 	}
 }
+
+func TestSessionRunner_LoopDetection(t *testing.T) {
+	// Model returns the exact same tool call twice in a row
+	mock := &mockEngine{
+		responses: []engine.Response{
+			{
+				ToolCalls: []engine.ToolCall{
+					{Name: "execute_shell", Command: "Get-Service | Where-Object {$_.Name -like '*robo*'}", Description: "Find service"},
+				},
+			},
+			{
+				ToolCalls: []engine.ToolCall{
+					{Name: "execute_shell", Command: "Get-Service | Where-Object {$_.Name -like '*robo*'}", Description: "Find service again"},
+				},
+			},
+		},
+	}
+
+	cfg := config.NewDefaultConfig()
+	// Disable interactive prompt for headless tests
+	cfg.Shell.OutputMode = "json"
+	runner := engine.NewSessionRunner(mock, cfg, engine.SessionConfig{
+		MaxSteps: 5,
+		Yolo:     true,
+	})
+
+	res, err := runner.Run(context.Background(), "Is there a service running called robo?")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.Status != "completed" {
+		t.Errorf("expected status completed after loop detection, got %s", res.Status)
+	}
+	if len(res.Steps) != 1 {
+		t.Errorf("expected only 1 executed step before loop termination, got %d", len(res.Steps))
+	}
+}
