@@ -20,7 +20,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version-file: 'go.mod'
           check-latest: true
 
       - name: Verify Formatting & AST
@@ -30,10 +30,7 @@ jobs:
           test -z "$(gofmt -l .)" || (echo "Formatting issues detected:" && gofmt -l . && exit 1)
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-          args: --allow-parallel-runners
+        run: go run github.com/golangci/golangci-lint/cmd/golangci-lint@latest run --allow-parallel-runners ./...
 
   test:
     name: Test (${{ matrix.os }})
@@ -49,7 +46,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version-file: 'go.mod'
           check-latest: true
 
       - name: Run Go Vet
