@@ -124,17 +124,17 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// 3. Validate inference environment setup
+	// 3. Start visual spinner immediately upon prompt receipt
+	isInteractive := (ui.IsStdoutTerminal() || ui.IsStderrTerminal()) && (outputFormat == "markdown" || outputFormat == "md" || outputFormat == "")
+	if isInteractive {
+		ui.StartSpinner("Verifying dependencies...")
+	}
+	defer ui.StopActiveSpinner()
+
+	// 4. Validate inference environment setup
 	if err := engine.ValidateInferenceSetup(cfg, cfg.Robo.InferenceMode); err != nil {
 		return err
 	}
-
-	// 4. Start visual spinner immediately upon prompt receipt
-	isInteractive := (ui.IsStdoutTerminal() || ui.IsStderrTerminal()) && (outputFormat == "markdown" || outputFormat == "md" || outputFormat == "")
-	if isInteractive {
-		ui.StartSpinner("Initializing...")
-	}
-	defer ui.StopActiveSpinner()
 
 	// 5. Construct engine based on inference_mode
 	var execEngine engine.Engine

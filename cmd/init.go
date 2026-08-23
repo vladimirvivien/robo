@@ -111,17 +111,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 		selectedVersion = prefs.Version
 		selectedModel = prefs.Model
 		selectedBackend = prefs.Backend
-
-		// Prompt for optional cloud model setup
-		cloudPrefs, err := ui.PromptCloudSelection()
-		if err != nil {
-			return fmt.Errorf("initialization cancelled: %w", err)
-		}
-		if cloudPrefs.ConfigureCloud {
-			cfg.LLM.Provider = cloudPrefs.Provider
-			cfg.LLM.Model = cloudPrefs.Model
-			cfg.LLM.APIKeyEnv = cloudPrefs.APIKeyEnv
-		}
 	}
 
 	cfg.SLM.Version = selectedVersion
@@ -157,14 +146,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 
 		summaryLines := []string{
-			fmt.Sprintf("• Config:   %s", targetConfigPath),
-			fmt.Sprintf("• Local:    %s (LiteRT-LM %s, %s)", selectedModel, cfg.SLM.Version, cfg.SLM.Backend),
+			fmt.Sprintf("• Config:         %s", targetConfigPath),
+			fmt.Sprintf("• Local Model:    %s (LiteRT-LM %s, %s)", selectedModel, cfg.SLM.Version, cfg.SLM.Backend),
 			fmt.Sprintf("• Inference Mode: %s", cfg.Robo.InferenceMode),
+			fmt.Sprintf("\nTry running:\n  %s", exampleCmd),
 		}
-		if cfg.LLM.APIKeyEnv != "" {
-			summaryLines = append(summaryLines, fmt.Sprintf("• Cloud:    %s (%s)", cfg.LLM.Model, cfg.LLM.APIKeyEnv))
-		}
-		summaryLines = append(summaryLines, fmt.Sprintf("\nTry running:\n  %s", exampleCmd))
 
 		summary := strings.Join(summaryLines, "\n")
 		fmt.Println(ui.Card(

@@ -20,26 +20,33 @@ var flagStatusJSON bool
 type StatusReport struct {
 	ConfigPath   string           `json:"config_path"`
 	ConfigExists bool             `json:"config_exists"`
-	Local        LocalStatusInfo  `json:"local"`
-	Cloud        CloudStatusInfo  `json:"cloud"`
-	Daemon       DaemonStatusInfo `json:"daemon"`
+	Robo         RoboStatusInfo   `json:"robo"`
+	SLM          SLMStatusInfo    `json:"slm"`
+	LLM          LLMStatusInfo    `json:"llm"`
+	Robod        DaemonStatusInfo `json:"robod"`
 }
 
-// LocalStatusInfo describes the on-device LiteRT-LM model and runtime status.
-type LocalStatusInfo struct {
-	Enabled      bool   `json:"enabled"`
-	Provider     string `json:"provider"`
+// RoboStatusInfo describes general application and inference mode settings.
+type RoboStatusInfo struct {
+	InferenceMode  string `json:"inference_mode"`
+	OutputMode     string `json:"output_mode"`
+	CaptureHistory bool   `json:"capture_history"`
+}
+
+// SLMStatusInfo describes the on-device LiteRT-LM model and runtime status.
+type SLMStatusInfo struct {
 	Model        string `json:"model"`
 	Backend      string `json:"backend"`
+	MaxTokens    int    `json:"max_tokens"`
 	Version      string `json:"version"`
+	CacheDir     string `json:"cache_dir,omitempty"`
 	ModelPath    string `json:"model_path,omitempty"`
 	ModelFound   bool   `json:"model_found"`
 	LibraryFound bool   `json:"library_found"`
 }
 
-// CloudStatusInfo describes the frontier cloud model configuration and credentials.
-type CloudStatusInfo struct {
-	Enabled    bool   `json:"enabled"`
+// LLMStatusInfo describes the frontier cloud model configuration and credentials.
+type LLMStatusInfo struct {
 	Provider   string `json:"provider"`
 	Model      string `json:"model"`
 	APIKeyEnv  string `json:"api_key_env,omitempty"`
@@ -48,17 +55,20 @@ type CloudStatusInfo struct {
 
 // DaemonStatusInfo describes the background robod process status.
 type DaemonStatusInfo struct {
+	Enabled bool   `json:"enabled"`
 	Running bool   `json:"running"`
 	PID     int    `json:"pid,omitempty"`
 	Model   string `json:"model,omitempty"`
+	URL     string `json:"url,omitempty"`
+	IdleTTL string `json:"idle_ttl,omitempty"`
 }
 
 // StatusCmd represents the "robo status" subcommand.
 var StatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Display current model configuration, runtime dependencies, and daemon status",
-	Long: `Inspects local LiteRT-LM models, runtime libraries, cloud API key configuration,
-active configuration paths, and the background daemon process state.`,
+	Long: `Inspects resolved configuration, on-device SLM settings, runtime libraries,
+remote LLM settings, and the background robod daemon process state.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	RunE:          runStatus,
@@ -87,24 +97,30 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		cfg = config.NewDefaultConfig()
 	}
 
-	// Local model inspection
+	// Robo general status
+	roboStatus := RoboStatusInfo{
+		InferenceMode:  cfg.Robo.InferenceMode,
+		OutputMode:     cfg.Robo.OutputMode,
+		CaptureHistory: cfg.Robo.CaptureHistory,
+	}
+
+	// On-device SLM inspection
 	localModelPath := engine.FindLocalModelPath(cfg.SLM.Model, cfg.SLM.CacheDir)
 	localLibFound := engine.IsLibDownloaded(cfg.SLM.Version)
-	localStatus := LocalStatusInfo{
-		Enabled:      true,
-		Provider:     "litertlm",
+	slmStatus := SLMStatusInfo{
 		Model:        cfg.SLM.Model,
 		Backend:      cfg.SLM.Backend,
+		MaxTokens:    cfg.SLM.MaxTokens,
 		Version:      cfg.SLM.Version,
+		CacheDir:     cfg.SLM.CacheDir,
 		ModelPath:    localModelPath,
 		ModelFound:   localModelPath != "",
 		LibraryFound: localLibFound,
 	}
 
-	// Cloud model inspection
+	// Remote LLM inspection
 	cloudCheck := engine.CheckCloudSetup(cfg.LLM)
-	cloudStatus := CloudStatusInfo{
-		Enabled:    cfg.Robo.InferenceMode == "llm" || cfg.LLM.APIKeyEnv != "",
+	llmStatus := LLMStatusInfo{
 		Provider:   cfg.LLM.Provider,
 		Model:      cfg.LLM.Model,
 		APIKeyEnv:  cloudCheck.APIKeyEnv,
@@ -117,12 +133,17 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	daemonRunning := false
 	daemonPID := 0
 	daemonModel := ""
+	daemonURL := cfg.Robod.URL
+	if daemonURL == "" {
+		daemonURL = config.DefaultRobodURL
+	}
 
-	healthURL := config.DefaultRobodURL + "/health"
+	healthURL := daemonURL + "/health"
 	if state != nil {
 		healthURL = fmt.Sprintf("%s/health", state.URL)
 		daemonPID = state.PID
 		daemonModel = state.Model
+		daemonURL = state.URL
 	}
 
 	client := &http.Client{Timeout: 800 * time.Millisecond}
@@ -137,17 +158,21 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	daemonInfo := DaemonStatusInfo{
+		Enabled: cfg.Robod.Enabled,
 		Running: daemonRunning,
 		PID:     daemonPID,
 		Model:   daemonModel,
+		URL:     daemonURL,
+		IdleTTL: cfg.Robod.IdleTTL.String(),
 	}
 
 	report := StatusReport{
 		ConfigPath:   targetConfigPath,
 		ConfigExists: configExists,
-		Local:        localStatus,
-		Cloud:        cloudStatus,
-		Daemon:       daemonInfo,
+		Robo:         roboStatus,
+		SLM:          slmStatus,
+		LLM:          llmStatus,
+		Robod:        daemonInfo,
 	}
 
 	outMode := strings.ToLower(strings.TrimSpace(flagOutput))
@@ -166,9 +191,18 @@ func runStatus(cmd *cobra.Command, args []string) error {
 
 		// Config section
 		if configExists {
-			fmt.Fprintf(&sb, "Config:\n  • File:       %s\n\n", targetConfigPath)
+			inferenceBadge := "(Active - Local SLM)"
+			if cfg.Robo.InferenceMode == "llm" {
+				inferenceBadge = "(Active - Remote LLM)"
+			}
+			fmt.Fprintf(&sb, "Config:\n  • File:           %s\n  • Inference Mode: %s %s\n  • Output Mode:    %s\n\n",
+				targetConfigPath,
+				cfg.Robo.InferenceMode,
+				inferenceBadge,
+				cfg.Robo.OutputMode,
+			)
 		} else {
-			fmt.Fprintf(&sb, "Config:\n  • File:       %s (Not Found)\n\n", targetConfigPath)
+			fmt.Fprintf(&sb, "Config:\n  • File:           %s (Not Found)\n\n", targetConfigPath)
 			sb.WriteString("Status:\n  • robo is not initialized. Run 'robo init' to set up local models.\n")
 			fmt.Println(ui.Card(
 				ui.BadgeSuccess("🤖 robo • System & Model Status"),
@@ -178,35 +212,47 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 
-		// Local model section
+		// On-Device SLM section
 		localModelStatus := "(Not Found - run 'robo init')"
-		if localStatus.ModelFound {
-			localModelStatus = fmt.Sprintf("%s (Ready)", localStatus.ModelPath)
+		if slmStatus.ModelFound {
+			localModelStatus = fmt.Sprintf("%s (Ready)", slmStatus.ModelPath)
 		}
 
 		localLibStatus := "(Missing - run 'robo init')"
-		if localStatus.LibraryFound {
-			localLibStatus = fmt.Sprintf("LiteRT-LM %s (Installed)", localStatus.Version)
+		if slmStatus.LibraryFound {
+			localLibStatus = fmt.Sprintf("LiteRT-LM %s (Installed)", slmStatus.Version)
 		} else {
-			localLibStatus = fmt.Sprintf("LiteRT-LM %s %s", localStatus.Version, localLibStatus)
+			localLibStatus = fmt.Sprintf("LiteRT-LM %s %s", slmStatus.Version, localLibStatus)
 		}
 
-		fmt.Fprintf(&sb, "Local Model (LiteRT-LM):\n  • Model:      %s\n  • Backend:    %s\n  • Runtime:    %s\n  • Weights:    %s\n\n",
-			localStatus.Model,
-			localStatus.Backend,
+		slmHeader := "On-Device SLM (LiteRT-LM):"
+		if cfg.Robo.InferenceMode != "llm" {
+			slmHeader = "On-Device SLM (LiteRT-LM • Active):"
+		}
+
+		fmt.Fprintf(&sb, "%s\n  • Model:          %s\n  • Backend:        %s\n  • Max Tokens:     %d\n  • Runtime:        %s\n  • Weights:        %s\n\n",
+			slmHeader,
+			slmStatus.Model,
+			slmStatus.Backend,
+			slmStatus.MaxTokens,
 			localLibStatus,
 			localModelStatus,
 		)
 
-		// Cloud model section
-		if cloudStatus.Enabled {
-			cloudKeyStatus := fmt.Sprintf("%s (Not Set)", cloudStatus.APIKeyEnv)
-			if cloudStatus.Configured {
-				cloudKeyStatus = fmt.Sprintf("%s (Configured)", cloudStatus.APIKeyEnv)
+		// Remote LLM section (only display if configured or explicitly selected)
+		if llmStatus.Configured || cfg.Robo.InferenceMode == "llm" || cfg.LLM.IsConfigured() {
+			cloudKeyStatus := fmt.Sprintf("%s (Not Set)", llmStatus.APIKeyEnv)
+			if llmStatus.Configured {
+				cloudKeyStatus = fmt.Sprintf("%s (Configured)", llmStatus.APIKeyEnv)
 			}
-			fmt.Fprintf(&sb, "Cloud Model:\n  • Provider:   %s\n  • Model:      %s\n  • API Key:    %s\n\n",
-				cloudStatus.Provider,
-				cloudStatus.Model,
+			llmHeader := "Remote LLM:"
+			if cfg.Robo.InferenceMode == "llm" {
+				llmHeader = "Remote LLM (Active):"
+			}
+			fmt.Fprintf(&sb, "%s\n  • Provider:       %s\n  • Model:          %s\n  • API Key:        %s\n\n",
+				llmHeader,
+				llmStatus.Provider,
+				llmStatus.Model,
 				cloudKeyStatus,
 			)
 		}
@@ -220,7 +266,11 @@ func runStatus(cmd *cobra.Command, args []string) error {
 				daemonText = "Running"
 			}
 		}
-		fmt.Fprintf(&sb, "Daemon (robod):\n  • State:      %s", daemonText)
+		fmt.Fprintf(&sb, "Daemon (robod):\n  • State:          %s\n  • Idle TTL:       %s\n  • URL:            %s",
+			daemonText,
+			daemonInfo.IdleTTL,
+			daemonInfo.URL,
+		)
 
 		fmt.Println(ui.Card(
 			ui.BadgeSuccess("🤖 robo • System & Model Status"),
@@ -231,16 +281,12 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	// Plain text output
-	fmt.Printf("Config:    %s (exists: %v)\n", targetConfigPath, configExists)
-	fmt.Printf("Local:     %s (backend: %s, model_found: %v, lib_found: %v)\n", localStatus.Model, localStatus.Backend, localStatus.ModelFound, localStatus.LibraryFound)
-	if cloudStatus.Enabled {
-		cloudModelStr := cloudStatus.Model
-		if !strings.HasPrefix(cloudStatus.Model, cloudStatus.Provider+"/") {
-			cloudModelStr = fmt.Sprintf("%s/%s", cloudStatus.Provider, cloudStatus.Model)
-		}
-		fmt.Printf("Cloud:     %s (configured: %v)\n", cloudModelStr, cloudStatus.Configured)
+	fmt.Printf("Config:    %s (exists: %v, mode: %s)\n", targetConfigPath, configExists, cfg.Robo.InferenceMode)
+	fmt.Printf("SLM:       %s (backend: %s, model_found: %v, lib_found: %v)\n", slmStatus.Model, slmStatus.Backend, slmStatus.ModelFound, slmStatus.LibraryFound)
+	if llmStatus.Configured || cfg.Robo.InferenceMode == "llm" || cfg.LLM.IsConfigured() {
+		fmt.Printf("LLM:       %s (configured: %v)\n", llmStatus.Model, llmStatus.Configured)
 	}
-	fmt.Printf("Daemon:    running: %v (pid: %d)\n", daemonInfo.Running, daemonInfo.PID)
+	fmt.Printf("Robod:     running: %v (pid: %d)\n", daemonInfo.Running, daemonInfo.PID)
 
 	return nil
 }

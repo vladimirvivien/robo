@@ -16,6 +16,7 @@ import (
 
 	"github.com/vladimirvivien/robo/internal/config"
 	"github.com/vladimirvivien/robo/internal/engine"
+	"github.com/vladimirvivien/robo/internal/ui"
 )
 
 // Client coordinates sending requests to the local background daemon with fallback.
@@ -136,10 +137,12 @@ func (c *Client) resolveEndpoint(ctx context.Context) (string, error) {
 	}
 
 	// 3. Try spawning local daemon
+	ui.UpdateActiveSpinner("Launching daemon...")
 	if err := c.launcher(); err != nil {
 		return "", fmt.Errorf("robod: auto-spawn failed: %w", err)
 	}
 
+	ui.UpdateActiveSpinner("Loading model...")
 	// Poll for readiness up to 10 seconds (gives model weights and GPU time to initialize)
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {

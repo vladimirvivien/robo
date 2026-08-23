@@ -34,6 +34,25 @@ func TestConfig_Defaults(t *testing.T) {
 	}
 }
 
+func TestConfig_DefaultOmitsLLM(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "default-config.yaml")
+
+	cfg := config.NewDefaultConfig()
+	if err := cfg.Save(path); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if loaded.LLM.IsConfigured() {
+		t.Errorf("expected LLM to be unconfigured by default, got %+v", loaded.LLM)
+	}
+}
+
 func TestConfig_SaveAndLoad(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "custom-config.yaml")
@@ -83,6 +102,7 @@ func TestConfig_EnvOverrides(t *testing.T) {
 	t.Setenv("ROBO_INFERENCE_MODE", "llm")
 	t.Setenv("ROBO_SLM_BACKEND", "cpu")
 	t.Setenv("ROBO_SLM_VERSION", "v0.18.0")
+	t.Setenv("ROBO_LLM_PROVIDER", "googleai")
 	t.Setenv("ROBO_LLM_BASE_URL", "https://env.api.com")
 	t.Setenv("ROBO_ROBOD_ENABLED", "false")
 	t.Setenv("ROBO_OUTPUT_MODE", "code")

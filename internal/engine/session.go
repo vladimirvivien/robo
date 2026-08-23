@@ -130,9 +130,9 @@ func (r *SessionRunner) Run(ctx context.Context, goal string) (*SessionResult, e
 			(r.Settings.OutputFormat == "markdown" || r.Settings.OutputFormat == "md" || r.Settings.OutputFormat == "")
 		if isInteractive {
 			if step == 1 {
-				ui.StartSpinner("Working...")
+				ui.UpdateActiveSpinner("Working...")
 			} else {
-				ui.StartSpinner(fmt.Sprintf("Evaluating step %d...", step))
+				ui.UpdateActiveSpinner(fmt.Sprintf("Evaluating step %d...", step))
 			}
 		}
 

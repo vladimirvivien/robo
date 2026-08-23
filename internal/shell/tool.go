@@ -124,7 +124,7 @@ func (h *ToolHandler) Handle(ctx context.Context, in ShellInput) (ShellOutput, e
 	if h.cfg != nil && h.cfg.Robo.AutoAccept {
 		if assessment.Tier == RiskTierDestructive {
 			// CIRCUIT BREAKER / HARD BRAKE: Destructive commands require explicit typed confirmation
-			confirmed, err := ui.PromptDestructiveConfirm(assessment.Warning, "yes-delete")
+			confirmed, err := ui.PromptDestructiveConfirm(assessment.Warning, "--yes-allow-destructive")
 			if err != nil || !confirmed {
 				fmt.Fprintln(os.Stderr, ui.BadgeWarning("Execution aborted: destructive confirmation not confirmed"))
 				return ShellOutput{ExitCode: 1, Cancelled: true, Tier: assessment.Tier, RiskScore: assessment.Score}, nil
@@ -140,7 +140,7 @@ func (h *ToolHandler) Handle(ctx context.Context, in ShellInput) (ShellOutput, e
 		}
 	} else if assessment.Tier == RiskTierDestructive {
 		// Standard Interactive Mode: Destructive Confirmation Gate
-		confirmed, err := ui.PromptDestructiveConfirm(assessment.Warning, "yes-delete")
+		confirmed, err := ui.PromptDestructiveConfirm(assessment.Warning, "--yes-allow-destructive")
 		if err != nil || !confirmed {
 			fmt.Fprintln(os.Stderr, ui.BadgeWarning("Execution aborted: destructive confirmation not confirmed"))
 			return ShellOutput{ExitCode: 1, Cancelled: true, Tier: assessment.Tier, RiskScore: assessment.Score}, nil

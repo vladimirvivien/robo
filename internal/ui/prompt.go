@@ -58,7 +58,7 @@ func PromptDestructiveConfirm(warning, requiredKeyword string) (bool, error) {
 	StopActiveSpinner()
 
 	if requiredKeyword == "" {
-		requiredKeyword = "yes-delete"
+		requiredKeyword = "--yes-allow-destructive"
 	}
 
 	var typedInput string
@@ -103,78 +103,6 @@ type InitPreferences struct {
 	Version string
 	Model   string
 	Backend string
-}
-
-// CloudPreferences holds choices selected for optional cloud model setup.
-type CloudPreferences struct {
-	ConfigureCloud bool
-	Provider       string
-	Model          string
-	APIKeyEnv      string
-}
-
-// PromptCloudSelection prompts the user if they wish to set up a cloud model, and captures credentials if approved.
-func PromptCloudSelection() (CloudPreferences, error) {
-	StopActiveSpinner()
-
-	var configure bool
-	confirmField := huh.NewConfirm().
-		Title("Would you also like to configure a cloud frontier model (e.g. Gemini, Claude, OpenAI)?").
-		Description("Cloud models provide frontier reasoning for high-complexity prompts when enabled.").
-		Value(&configure)
-
-	confirmForm := huh.NewForm(huh.NewGroup(confirmField))
-	if err := confirmForm.Run(); err != nil {
-		return CloudPreferences{}, err
-	}
-
-	if !configure {
-		return CloudPreferences{ConfigureCloud: false}, nil
-	}
-
-	prefs := CloudPreferences{
-		ConfigureCloud: true,
-		Provider:       "googleai",
-		Model:          "googleai/gemini-2.5-flash",
-		APIKeyEnv:      "GEMINI_API_KEY",
-	}
-
-	providerSelect := huh.NewSelect[string]().
-		Title("Select cloud model provider:").
-		Options(
-			huh.NewOption("Google AI (Gemini 2.5 Flash / Pro)", "googleai"),
-			huh.NewOption("Anthropic (Claude 3.5 Sonnet / Haiku)", "anthropic"),
-			huh.NewOption("OpenAI (GPT-4o / GPT-4o-mini)", "openai"),
-		).
-		Value(&prefs.Provider)
-
-	modelInput := huh.NewInput().
-		Title("Cloud model identifier:").
-		Description("e.g. googleai/gemini-2.5-flash, anthropic/claude-3-5-sonnet, openai/gpt-4o").
-		Value(&prefs.Model)
-
-	apiKeyEnvInput := huh.NewInput().
-		Title("API key environment variable:").
-		Description("Name of the environment variable containing your API key:").
-		Value(&prefs.APIKeyEnv)
-
-	form := huh.NewForm(huh.NewGroup(providerSelect, modelInput, apiKeyEnvInput))
-	if err := form.Run(); err != nil {
-		return prefs, err
-	}
-
-	if strings.TrimSpace(prefs.APIKeyEnv) == "" {
-		switch prefs.Provider {
-		case "anthropic":
-			prefs.APIKeyEnv = "ANTHROPIC_API_KEY"
-		case "openai":
-			prefs.APIKeyEnv = "OPENAI_API_KEY"
-		default:
-			prefs.APIKeyEnv = "GEMINI_API_KEY"
-		}
-	}
-
-	return prefs, nil
 }
 
 // PromptInitSelection prompts the user to select a LiteRT-LM runtime version, on-device model, and acceleration backend.

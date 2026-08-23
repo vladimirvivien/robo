@@ -115,6 +115,8 @@ func TestValidateInferenceSetup(t *testing.T) {
 		cfg := config.NewDefaultConfig()
 		cfg.SLM.LibDir = libDir
 		cfg.SLM.Model = modelFile
+		cfg.LLM.Provider = "googleai"
+		cfg.LLM.Model = "googleai/gemini-2.5-flash"
 		cfg.LLM.APIKey = "valid-key"
 		err := engine.ValidateInferenceSetup(cfg, "cloud-only")
 		if err != nil {

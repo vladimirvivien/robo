@@ -58,7 +58,7 @@ Guidelines:
 type Config struct {
 	Robo  RoboConfig  `yaml:"robo"`
 	SLM   SLMConfig   `yaml:"slm"`
-	LLM   LLMConfig   `yaml:"llm"`
+	LLM   LLMConfig   `yaml:"llm,omitempty"`
 	Robod RobodConfig `yaml:"robod"`
 }
 
@@ -93,6 +93,16 @@ type LLMConfig struct {
 	APIKeyEnv string `yaml:"api_key_env,omitempty"`
 }
 
+// IsZero returns true if no LLM configuration fields are set (used by yaml.v3 omitempty).
+func (c LLMConfig) IsZero() bool {
+	return c.Provider == "" && c.Model == "" && c.BaseURL == "" && c.APIKey == "" && c.APIKeyEnv == ""
+}
+
+// IsConfigured returns true if provider, model, or API credentials are set.
+func (c LLMConfig) IsConfigured() bool {
+	return c.Provider != "" || c.Model != "" || c.APIKey != "" || c.APIKeyEnv != ""
+}
+
 // RobodConfig defines settings for the hot-start background robod daemon.
 type RobodConfig struct {
 	Enabled bool          `yaml:"enabled"`
@@ -120,11 +130,7 @@ func NewDefaultConfig() *Config {
 			CacheDir:     filepath.Join(configDir, "cache"),
 			Version:      DefaultLocalVersion,
 		},
-		LLM: LLMConfig{
-			Provider:  DefaultCloudProvider,
-			Model:     DefaultCloudModel,
-			APIKeyEnv: DefaultCloudAPIKeyEnv,
-		},
+		LLM: LLMConfig{}, // Unconfigured by default for local-first execution
 		Robod: RobodConfig{
 			Enabled: true,
 			IdleTTL: DefaultRobodIdleTTL,
@@ -239,17 +245,11 @@ func (c *Config) applyEnvOverrides() {
 	// SLM overrides
 	if env := os.Getenv("ROBO_SLM_MODEL"); env != "" {
 		c.SLM.Model = env
-	} else if env := os.Getenv("ROBO_LOCAL_MODEL"); env != "" {
-		c.SLM.Model = env
 	}
 	if env := os.Getenv("ROBO_SLM_BACKEND"); env != "" {
 		c.SLM.Backend = env
-	} else if env := os.Getenv("ROBO_LOCAL_BACKEND"); env != "" {
-		c.SLM.Backend = env
 	}
 	if env := os.Getenv("ROBO_SLM_VERSION"); env != "" {
-		c.SLM.Version = env
-	} else if env := os.Getenv("ROBO_LOCAL_VERSION"); env != "" {
 		c.SLM.Version = env
 	} else if env := os.Getenv("LITERTLM_LIB_VERSION"); env != "" {
 		c.SLM.Version = env
@@ -263,17 +263,11 @@ func (c *Config) applyEnvOverrides() {
 	// LLM overrides
 	if env := os.Getenv("ROBO_LLM_PROVIDER"); env != "" {
 		c.LLM.Provider = env
-	} else if env := os.Getenv("ROBO_CLOUD_PROVIDER"); env != "" {
-		c.LLM.Provider = env
 	}
 	if env := os.Getenv("ROBO_LLM_MODEL"); env != "" {
 		c.LLM.Model = env
-	} else if env := os.Getenv("ROBO_CLOUD_MODEL"); env != "" {
-		c.LLM.Model = env
 	}
 	if env := os.Getenv("ROBO_LLM_BASE_URL"); env != "" {
-		c.LLM.BaseURL = env
-	} else if env := os.Getenv("ROBO_CLOUD_BASE_URL"); env != "" {
 		c.LLM.BaseURL = env
 	}
 	if env := os.Getenv("ROBO_ROBOD_ENABLED"); env != "" {

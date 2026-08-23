@@ -12,6 +12,7 @@ import (
 	"github.com/vladimirvivien/robo/internal/config"
 	"github.com/vladimirvivien/robo/internal/engine"
 	"github.com/vladimirvivien/robo/internal/shell"
+	"github.com/vladimirvivien/robo/internal/ui"
 )
 
 type toolCaptureCtxKey struct{}
@@ -98,6 +99,7 @@ func (e *Engine) Client(ctx context.Context) (*litertlm.Client, error) {
 		opts = append(opts, litertlm.WithCacheDir(cacheDir))
 	}
 
+	ui.UpdateActiveSpinner("Loading model...")
 	client, err := litertlm.New(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("local: initialize litertlm: %w", err)

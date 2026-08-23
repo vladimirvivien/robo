@@ -41,6 +41,19 @@ func StopActiveSpinner() {
 	}
 }
 
+// UpdateActiveSpinner dynamically updates the message on the currently running spinner or starts a new one.
+func UpdateActiveSpinner(message string) {
+	activeSpinnerMu.Lock()
+	sp := activeSpinner
+	activeSpinnerMu.Unlock()
+
+	if sp != nil {
+		sp.UpdateMessage(message)
+	} else {
+		StartSpinner(message)
+	}
+}
+
 // StartSpinner creates and starts an animated spinner on stderr if in an interactive terminal.
 func StartSpinner(message string) *Spinner {
 	StopActiveSpinner()
@@ -72,7 +85,7 @@ func (s *Spinner) run() {
 	s.mu.Lock()
 	initialMsg := s.message
 	s.mu.Unlock()
-	if _, err := fmt.Fprintf(s.out, "\r%s %s", styleSpinner.Render(spinnerFrames[0]), styleSpinnerText.Render(initialMsg)); err != nil {
+	if _, err := fmt.Fprintf(s.out, "\r\033[2K%s %s", styleSpinner.Render(spinnerFrames[0]), styleSpinnerText.Render(initialMsg)); err != nil {
 		return
 	}
 
@@ -94,21 +107,26 @@ func (s *Spinner) run() {
 			frame := spinnerFrames[frameIdx%len(spinnerFrames)]
 			frameIdx++
 
-			if _, err := fmt.Fprintf(s.out, "\r%s %s", styleSpinner.Render(frame), styleSpinnerText.Render(msg)); err != nil {
+			if _, err := fmt.Fprintf(s.out, "\r\033[2K%s %s", styleSpinner.Render(frame), styleSpinnerText.Render(msg)); err != nil {
 				return
 			}
 		}
 	}
 }
 
-// UpdateMessage changes the status text displayed next to the spinner.
+// UpdateMessage changes the status text displayed next to the spinner and refreshes the terminal line.
 func (s *Spinner) UpdateMessage(msg string) {
 	if s == nil {
 		return
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.message = msg
+	stopped := s.stopped
+	s.mu.Unlock()
+
+	if !stopped && s.out != nil {
+		_, _ = fmt.Fprintf(s.out, "\r\033[2K%s %s", styleSpinner.Render(spinnerFrames[0]), styleSpinnerText.Render(msg))
+	}
 }
 
 // Stop halts the spinner and clears its terminal line.
