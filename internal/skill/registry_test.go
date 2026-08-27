@@ -138,6 +138,7 @@ func TestRegistry_RepositoryExampleSkills(t *testing.T) {
 		"service-management",
 		"log-analyzer",
 		"security-permissions",
+		"device-discovery",
 	}
 
 	for _, name := range expectedSkills {
@@ -174,6 +175,7 @@ func TestRegistry_AllBuiltinSkills(t *testing.T) {
 		"service-management",
 		"log-analyzer",
 		"security-permissions",
+		"device-discovery",
 	}
 
 	for _, name := range expectedBuiltins {
