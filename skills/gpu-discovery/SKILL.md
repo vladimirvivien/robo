@@ -1,7 +1,6 @@
----
+﻿---
 name: gpu-discovery
 description: Discovers discrete/integrated graphics, AI accelerators, VRAM, and driver telemetry.
-version: 1.0.0
 triggers:
   keywords: ["gpu info", "graphics card", "nvidia-smi", "vram", "video controller", "cuda gpu", "display adapter", "accelerator", "rocm"]
 ---

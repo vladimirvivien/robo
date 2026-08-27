@@ -1,7 +1,6 @@
----
+﻿---
 name: git-commit
 description: Analyzes git diff and status to generate Conventional Commit messages.
-version: 1.0.0
 triggers:
   keywords: ["commit", "git commit", "staged", "commit message", "write commit"]
   files: [".git/*", ".gitignore"]

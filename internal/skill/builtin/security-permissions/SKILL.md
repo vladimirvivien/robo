@@ -1,7 +1,6 @@
----
+﻿---
 name: security-permissions
 description: Audits local file permissions, SSH key directories, world-writable files, and sudo privileges.
-version: 1.0.0
 triggers:
   keywords: ["chmod", "chown", "ssh key permissions", "permission denied", "sudoers", "world-writable", "file permissions", "ssh-keygen", "fix permissions"]
 ---

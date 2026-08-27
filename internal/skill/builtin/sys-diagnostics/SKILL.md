@@ -1,7 +1,6 @@
----
+﻿---
 name: sys-diagnostics
 description: Inspects system resource usage, open ports, and process diagnostics.
-version: 1.0.0
 triggers:
   keywords: ["memory", "cpu", "disk", "ports", "listening ports", "top processes", "resource usage", "process table"]
 ---

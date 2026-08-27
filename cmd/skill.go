@@ -45,21 +45,29 @@ var skillListCmd = &cobra.Command{
 
 		if !ui.IsStdoutTerminal() || flagOutput == "plain" {
 			for _, s := range skills {
-				fmt.Printf("%-20s  %-8s  %-8s  %s\n", s.Name, s.Scope, s.Version, s.Description)
+				ver := s.Version
+				if ver == "" {
+					ver = "-"
+				}
+				fmt.Printf("%-24s %-10s %-9s %s\n", s.Name, s.Scope, ver, s.Description)
 			}
 			return nil
 		}
 
-		// Interactive Card / Table UI
+		// Interactive Card / Table UI with exact column widths
 		headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86"))
 		dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-		nameStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255"))
-		scopeProjectStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))  // Green
-		scopeGlobalStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("39"))   // Cyan
-		scopeBuiltinStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245")) // Gray
+		nameStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255")).Width(24)
+		scopeProjectStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Width(10)  // Green
+		scopeGlobalStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Width(10)   // Cyan
+		scopeBuiltinStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Width(10) // Gray
+		verStyle := dimStyle.Width(9)
 
 		var sb strings.Builder
-		sb.WriteString(headerStyle.Render(fmt.Sprintf("%-22s %-10s %-8s %s", "NAME", "SCOPE", "VERSION", "DESCRIPTION")))
+		sb.WriteString(headerStyle.Width(24).Render("NAME"))
+		sb.WriteString(headerStyle.Width(10).Render("SCOPE"))
+		sb.WriteString(headerStyle.Width(9).Render("VERSION"))
+		sb.WriteString(headerStyle.Render("DESCRIPTION"))
 		sb.WriteString("\n")
 		sb.WriteString(dimStyle.Render(strings.Repeat("─", 80)))
 		sb.WriteString("\n")
@@ -78,15 +86,14 @@ var skillListCmd = &cobra.Command{
 				ver = "-"
 			}
 
-			fmt.Fprintf(&sb, "%-22s %-19s %-8s %s\n",
-				nameStyle.Render(s.Name),
-				scopeRendered,
-				dimStyle.Render(ver),
-				s.Description,
-			)
+			sb.WriteString(nameStyle.Render(s.Name))
+			sb.WriteString(scopeRendered)
+			sb.WriteString(verStyle.Render(ver))
+			sb.WriteString(s.Description)
+			sb.WriteString("\n")
 		}
 
-		fmt.Println(sb.String())
+		fmt.Print(sb.String())
 		return nil
 	},
 }

@@ -1,7 +1,6 @@
----
+﻿---
 name: usb-discovery
 description: Discovers connected USB devices, hubs, Vendor/Product IDs (VID:PID), and device descriptors.
-version: 1.0.0
 triggers:
   keywords: ["usb devices", "lsusb", "usb ports", "plugged in usb", "usb hub", "vendor id", "product id", "usb tree"]
 ---

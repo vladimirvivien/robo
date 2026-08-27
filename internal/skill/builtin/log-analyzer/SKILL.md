@@ -1,7 +1,6 @@
----
+﻿---
 name: log-analyzer
 description: Queries, filters, and extracts error traces from system journals, kernel rings, and log files.
-version: 1.0.0
 triggers:
   keywords: ["journalctl", "dmesg", "syslog", "check logs", "service logs", "system errors", "crash log", "event viewer", "kernel errors", "tail logs"]
 ---

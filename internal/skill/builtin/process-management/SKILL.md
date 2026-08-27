@@ -1,7 +1,6 @@
----
+﻿---
 name: process-management
 description: Inspects process trees, resource consumers, finds PIDs, and manages process termination.
-version: 1.0.0
 triggers:
   keywords: ["kill process", "stop process", "find pid", "high cpu process", "process tree", "zombie process", "top processes", "ps aux", "terminate process"]
 ---

@@ -1,7 +1,6 @@
----
+﻿---
 name: serial-discovery
 description: Discovers active serial ports, COM interfaces, and microcontroller USB-UART bridges.
-version: 1.0.0
 triggers:
   keywords: ["serial port", "com port", "ttyusb", "ttyacm", "arduino port", "baud rate", "uart device", "ftdi", "microcontroller port", "esp32 port"]
 ---

@@ -1,7 +1,6 @@
----
+﻿---
 name: git-workflow
 description: Manages git branch operations, stash lifecycles, conflict resolution, and working tree triage.
-version: 1.0.0
 triggers:
   keywords: ["git status", "git stash", "merge conflict", "git branch", "git clean", "untracked files", "discard changes", "git diff", "git log", "git rebase"]
   files: [".git/*", ".gitignore"]

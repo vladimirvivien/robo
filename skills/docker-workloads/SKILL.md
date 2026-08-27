@@ -1,7 +1,6 @@
----
+﻿---
 name: docker-workloads
 description: Manages local container lifecycles, health checks, networks, and streaming logs.
-version: 1.0.0
 triggers:
   keywords: ["docker container", "docker run", "docker compose", "container logs", "docker inspect", "container status", "restart container", "docker ps"]
   files: ["Dockerfile", "docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"]

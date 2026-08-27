@@ -1,7 +1,6 @@
----
+﻿---
 name: disk-storage-triage
 description: Identifies full filesystems, scans large directories/files, and checks inode utilization.
-version: 1.0.0
 triggers:
   keywords: ["disk full", "disk space", "largest files", "df -h", "du -sh", "out of space", "clean disk", "free space", "disk usage"]
 ---

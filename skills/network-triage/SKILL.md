@@ -1,7 +1,6 @@
----
+﻿---
 name: network-triage
 description: Diagnoses listening sockets, port conflicts, DNS resolution, and local connectivity.
-version: 1.0.0
 triggers:
   keywords: ["port conflict", "listening ports", "port in use", "dns lookup", "check connection", "netstat", "ss -tlpn", "curl error", "socket", "open port"]
 ---

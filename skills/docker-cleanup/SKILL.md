@@ -1,7 +1,6 @@
----
+﻿---
 name: docker-cleanup
 description: Audits and reclaims host disk space from dangling images, stopped containers, build caches, and volumes.
-version: 1.0.0
 triggers:
   keywords: ["docker prune", "docker cleanup", "dangling images", "docker disk", "reclaim docker space", "docker volumes", "docker system df"]
 ---

@@ -1,7 +1,6 @@
----
+﻿---
 name: service-management
 description: Controls, restarts, enables/disables, and inspects status of local background services.
-version: 1.0.0
 triggers:
   keywords: ["systemctl", "restart service", "service status", "enable service", "daemon status", "start service", "launchctl", "windows service", "failed services"]
 ---

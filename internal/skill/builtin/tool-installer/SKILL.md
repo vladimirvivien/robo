@@ -1,7 +1,6 @@
----
+﻿---
 name: tool-installer
 description: Installs, updates, and verifies developer CLI tools across native OS package managers.
-version: 1.0.0
 triggers:
   keywords: ["install tool", "install cli", "brew install", "apt install", "winget", "update tool", "package manager", "missing command", "install package"]
 ---

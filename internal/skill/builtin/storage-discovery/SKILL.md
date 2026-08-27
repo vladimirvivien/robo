@@ -1,7 +1,6 @@
----
+﻿---
 name: storage-discovery
 description: Discovers physical drives, NVMe/SATA transport buses, media types (SSD/HDD), and drive serial numbers.
-version: 1.0.0
 triggers:
   keywords: ["physical disk", "nvme drive", "storage drives", "list disks", "lsblk", "diskutil", "Get-PhysicalDisk", "hard drive", "ssd info", "block devices"]
 ---

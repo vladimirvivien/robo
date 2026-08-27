@@ -1,7 +1,6 @@
----
+﻿---
 name: driver-diagnostics
 description: Diagnoses missing drivers, PnP hardware error codes, driver signing, and kernel hotplug ring logs.
-version: 1.0.0
 triggers:
   keywords: ["driver info", "missing driver", "device error", "pnp device", "kernel module", "hotplug", "dmesg hardware", "hardware driver", "device status"]
 ---
