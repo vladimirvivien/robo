@@ -27,6 +27,7 @@ var (
 	flagOneShot    bool
 	flagDryRun     bool
 	flagMaxSteps   int
+	flagSkill      string
 )
 
 // RootCmd represents the base command when called without subcommands.
@@ -66,6 +67,7 @@ func init() {
 	RootCmd.Flags().BoolVarP(&flagOneShot, "one-shot", "1", false, "force strictly single-turn execution (N=1) without follow-up loop")
 	RootCmd.Flags().BoolVarP(&flagDryRun, "dry-run", "d", false, "simulate execution plan without host mutation")
 	RootCmd.Flags().IntVar(&flagMaxSteps, "max-steps", 5, "maximum number of agent completion steps")
+	RootCmd.Flags().StringVar(&flagSkill, "skill", "", "force activation of a specific skill by name")
 }
 
 func runRoot(cmd *cobra.Command, args []string) error {
@@ -183,6 +185,7 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		ForceBackend:       cfg.Robo.InferenceMode,
 		CustomInstructions: flagSystem,
 		StdinContent:       stdinContent,
+		SkillName:          flagSkill,
 	}
 
 	runner := engine.NewSessionRunner(execEngine, cfg, sessionConfig)

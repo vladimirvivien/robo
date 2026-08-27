@@ -8,19 +8,22 @@ import (
 
 	"github.com/vladimirvivien/robo/internal/config"
 	"github.com/vladimirvivien/robo/internal/shell"
+	"github.com/vladimirvivien/robo/internal/skill"
 	"github.com/vladimirvivien/robo/internal/ui"
 )
 
 // SessionConfig defines execution settings for the agent completion loop.
 type SessionConfig struct {
-	MaxSteps           int    `json:"max_steps"`     // Maximum steps before halting (default: 5)
-	OneShot            bool   `json:"one_shot"`      // Force single-turn execution ($N=1$)
-	Yolo               bool   `json:"yolo"`          // Auto-execute non-destructive steps
-	DryRun             bool   `json:"dry_run"`       // Simulate execution without host mutation
-	OutputFormat       string `json:"output_format"` // "markdown", "json", "code", "plain"
-	ForceBackend       string `json:"force_backend"` // "local", "cloud", or "" (auto)
-	CustomInstructions string `json:"custom_instructions,omitempty"`
-	StdinContent       string `json:"stdin_content,omitempty"`
+	MaxSteps           int      `json:"max_steps"`     // Maximum steps before halting (default: 5)
+	OneShot            bool     `json:"one_shot"`      // Force single-turn execution ($N=1$)
+	Yolo               bool     `json:"yolo"`          // Auto-execute non-destructive steps
+	DryRun             bool     `json:"dry_run"`       // Simulate execution without host mutation
+	OutputFormat       string   `json:"output_format"` // "markdown", "json", "code", "plain"
+	ForceBackend       string   `json:"force_backend"` // "local", "cloud", or "" (auto)
+	CustomInstructions string   `json:"custom_instructions,omitempty"`
+	StdinContent       string   `json:"stdin_content,omitempty"`
+	SkillName          string   `json:"skill_name,omitempty"` // Force activation of a specific skill
+	ActiveSkills       []string `json:"active_skills,omitempty"`
 }
 
 // StepRecord records the trajectory of an individual step within a session.
@@ -46,6 +49,7 @@ type SessionResult struct {
 	Provider      string       `json:"provider,omitempty"`
 	Model         string       `json:"model,omitempty"`
 	Local         bool         `json:"local"`
+	ActiveSkills  []string     `json:"active_skills,omitempty"`
 }
 
 // SessionRunner executes the 1..N step autonomous completion loop.
@@ -101,16 +105,41 @@ func (r *SessionRunner) Run(ctx context.Context, goal string) (*SessionResult, e
 		shellCtx, _ = collector.Collect(ctx, maxLines)
 	}
 
-	customInstructions := r.Settings.CustomInstructions
+	// 0. Discover skills and resolve active skills
+	skillReg := skill.NewRegistry("", "")
+	_ = skillReg.Discover()
+	skillsIndex := skillReg.BuildIndexPrompt()
 
+	var activeSkills []*skill.Skill
+	if r.Settings.SkillName != "" {
+		s, ok := skillReg.Get(r.Settings.SkillName)
+		if !ok {
+			return nil, fmt.Errorf("skill '%s' not found (use 'robo skill list' to view available skills)", r.Settings.SkillName)
+		}
+		activeSkills = []*skill.Skill{s}
+	} else {
+		activeSkills = skillReg.Match(goal, nil)
+	}
+
+	for _, s := range activeSkills {
+		result.ActiveSkills = append(result.ActiveSkills, s.Name)
+	}
+
+	customInstructions := r.Settings.CustomInstructions
 	tm := NewTrajectoryManager()
 
 	defer ui.StopActiveSpinner()
 
 	for step := 1; step <= r.Settings.MaxSteps; step++ {
-		// 1. Build prompt for Turn N with sliding-window compressed trajectory
-		sysPrompt := shell.BuildSystemPrompt(targetOS, targetArch, shellType, customInstructions, shellCtx)
+		// 1. Build prompt for Turn N with sliding-window compressed trajectory and skills index
+		sysPrompt := shell.BuildSystemPromptWithSkills(targetOS, targetArch, shellType, customInstructions, shellCtx, skillsIndex)
 		stepPrompt := tm.FormatPromptContext(goal)
+
+		// Inject active skill instructions directly into turn prompt
+		if len(activeSkills) > 0 {
+			skillsInstructions := skillReg.BuildInstructionsPrompt(activeSkills)
+			stepPrompt = skillsInstructions + "\n\n" + stepPrompt
+		}
 
 		req := Request{
 			Prompt:       stepPrompt,

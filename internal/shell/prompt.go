@@ -5,9 +5,9 @@ import (
 	"strings"
 )
 
-// BuildSystemPrompt dynamically assembles a focused, token-efficient system prompt
-// tailored specifically to the target OS, architecture, and shell dialect.
-func BuildSystemPrompt(targetOS, targetArch string, shellType Type, customInstructions string, sc *Context) string {
+// BuildSystemPromptWithSkills dynamically assembles a focused, token-efficient system prompt
+// tailored specifically to the target OS, architecture, shell dialect, and available skills index.
+func BuildSystemPromptWithSkills(targetOS, targetArch string, shellType Type, customInstructions string, sc *Context, skillsIndex string) string {
 	var sb strings.Builder
 
 	// 1. Universal Core Protocol (~50 tokens)
@@ -86,7 +86,13 @@ func BuildSystemPrompt(targetOS, targetArch string, shellType Type, customInstru
 		fmt.Fprintf(&sb, "User Instructions:\n%s\n\n", strings.TrimSpace(customInstructions))
 	}
 
-	// 4. Ambient Environment Context Grounding
+	// 4. Skills Index (if available)
+	if strings.TrimSpace(skillsIndex) != "" {
+		sb.WriteString(strings.TrimSpace(skillsIndex))
+		sb.WriteString("\n\n")
+	}
+
+	// 5. Ambient Environment Context Grounding
 	if sc != nil {
 		sb.WriteString(sc.FormatPromptContext())
 		sb.WriteString("\nContext Resolution:\n")
@@ -96,4 +102,9 @@ func BuildSystemPrompt(targetOS, targetArch string, shellType Type, customInstru
 	}
 
 	return strings.TrimSpace(sb.String())
+}
+
+// BuildSystemPrompt delegates to BuildSystemPromptWithSkills without a skills index.
+func BuildSystemPrompt(targetOS, targetArch string, shellType Type, customInstructions string, sc *Context) string {
+	return BuildSystemPromptWithSkills(targetOS, targetArch, shellType, customInstructions, sc, "")
 }

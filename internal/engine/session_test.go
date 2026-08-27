@@ -191,3 +191,45 @@ func TestSessionRunner_LoopDetection(t *testing.T) {
 		t.Errorf("expected only 1 executed step before loop termination, got %d", len(res.Steps))
 	}
 }
+
+func TestSessionRunner_SkillActivation(t *testing.T) {
+	mock := &mockEngine{
+		responses: []engine.Response{
+			{Text: "Conventional commit generated: feat(auth): add login"},
+		},
+	}
+
+	cfg := config.NewDefaultConfig()
+	runner := engine.NewSessionRunner(mock, cfg, engine.SessionConfig{
+		MaxSteps:  5,
+		SkillName: "git-commit",
+	})
+
+	res, err := runner.Run(context.Background(), "commit these staged files")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(res.ActiveSkills) == 0 || res.ActiveSkills[0] != "git-commit" {
+		t.Errorf("expected git-commit in ActiveSkills, got: %v", res.ActiveSkills)
+	}
+}
+
+func TestSessionRunner_SkillNotFound(t *testing.T) {
+	mock := &mockEngine{
+		responses: []engine.Response{
+			{Text: "done"},
+		},
+	}
+
+	cfg := config.NewDefaultConfig()
+	runner := engine.NewSessionRunner(mock, cfg, engine.SessionConfig{
+		MaxSteps:  5,
+		SkillName: "non-existent-skill-xyz",
+	})
+
+	_, err := runner.Run(context.Background(), "test")
+	if err == nil {
+		t.Fatal("expected error for non-existent skill, got nil")
+	}
+}
