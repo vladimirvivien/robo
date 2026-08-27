@@ -22,32 +22,22 @@ func BuildSystemPromptWithSkills(targetOS, targetArch string, shellType Type, cu
 	sb.WriteString("- \"execute_shell\" runs in a child subshell; session state (cd, export, $env:, source, ssh-agent) does NOT persist to the user's active terminal.\n")
 	sb.WriteString("- When asked why a session/directory change didn't take effect, or when a task requires terminal persistence, explain the subshell boundary and provide the command for direct execution.\n\n")
 
-	// 2. Dynamic Platform & Shell Module (~50-60 tokens)
+	// 2. Dynamic Platform & Shell Module (Invariants only, ~25-35 tokens)
 	switch shellType {
 	case ShellPowerShell:
 		sb.WriteString("Target Environment: Windows PowerShell\n")
 		sb.WriteString("Syntax & Execution:\n")
-		sb.WriteString("- Generate non-interactive batch commands using standard PowerShell cmdlets and object pipelines.\n")
-		sb.WriteString("- Pipeline & Subexpressions: Pass outputs between cmdlets using pipelines '|' or subexpressions '(Get-Process <name>).Id'. Never chain with ';' and shell variables ($LASTEXITCODE, $?).\n")
-		sb.WriteString("- Processes & Memory: Use 'Get-Process | Select-Object -Property Id, ProcessName, WS, CPU' (or -ExpandProperty WS for scalar). For top consumers: 'Get-Process | Sort-Object CPU -Descending | Select-Object -First <N>'. Never use Get-Counter.\n")
-		sb.WriteString("- Files & Search: Use 'Get-ChildItem -Recurse -Filter <pattern>', 'Select-String -Pattern <regex>' (not grep), 'Select-Object -First N' (not head).\n")
-		sb.WriteString("- Network & Ports: Use 'Get-NetTCPConnection -State Listen | Select-Object -Property LocalPort, OwningProcess' or 'Get-NetTCPConnection -OwningProcess (Get-Process -Name <name>).Id'.\n")
-		sb.WriteString("- Services: Use 'Get-Service -Name <name>', 'Restart-Service -Name <name>'.\n")
-		sb.WriteString("Multi-Step Tasks:\n")
-		sb.WriteString("- When a request has sequential steps, connect commands with pipelines '|' or execute sequentially.\n")
-		sb.WriteString("- For time intervals or delays, use 'Start-Sleep -Seconds <N>' before the query command.\n")
-		sb.WriteString("- For state modifications, use idempotent patterns (e.g. 'if (Test-Path dir) { ... }' or 'New-Item -Force').\n\n")
+		sb.WriteString("- Generate non-interactive batch commands using standard PowerShell cmdlets and object pipelines '|'.\n")
+		sb.WriteString("- Pipeline & Subexpressions: Pass outputs between cmdlets using pipelines '|' or subexpressions '(Get-Item <name>).Property'. Never chain with ';' and shell variables ($LASTEXITCODE, $?).\n")
+		sb.WriteString("- Multi-Step Tasks: Connect commands with pipelines '|' or execute sequentially. For time delays use 'Start-Sleep -Seconds <N>'.\n")
+		sb.WriteString("- Idempotence: Use idempotent patterns (e.g. 'if (Test-Path dir) { ... }' or 'New-Item -Force').\n\n")
 
 	case ShellFish:
-		// Fish drops down to POSIX Bash for command execution
 		sb.WriteString("Target Environment: POSIX Bash (executed via Bash compatibility layer for Fish terminal)\n")
 		sb.WriteString("Syntax & Execution:\n")
-		sb.WriteString("- Generate non-interactive batch commands; use standard POSIX Bash utilities (find, grep, awk, sed, curl, tar) with quoted variables (\"$VAR\").\n")
-		sb.WriteString("Multi-Step Tasks:\n")
-		sb.WriteString("- When a request has sequential steps (\"do X then Y\", \"wait N seconds and show Z\"), chain with '&&' for fail-fast safety.\n")
-		sb.WriteString("- For time intervals or delays, use 'sleep <N>' before the query command.\n")
-		sb.WriteString("- For CPU/Memory ranking: Use 'ps aux --sort=-%cpu | head -n 6'.\n")
-		sb.WriteString("- Use idempotent patterns ('mkdir -p', 'rm -f', '[ -f ... ]').\n\n")
+		sb.WriteString("- Generate non-interactive batch commands; use standard POSIX utilities with quoted variables (\"$VAR\").\n")
+		sb.WriteString("- Multi-Step Tasks: Chain sequential steps with '&&' for fail-fast safety. For time delays use 'sleep <N>'.\n")
+		sb.WriteString("- Idempotence: Use idempotent patterns ('mkdir -p', 'rm -f', '[ -f ... ]').\n\n")
 
 	default:
 		switch targetOS {
@@ -55,29 +45,21 @@ func BuildSystemPromptWithSkills(targetOS, targetArch string, shellType Type, cu
 			sb.WriteString("Target Environment: macOS POSIX (BSD)\n")
 			sb.WriteString("Syntax & Execution:\n")
 			sb.WriteString("- Generate non-interactive batch commands; avoid interactive tools (top, htop, less, nano, vi).\n")
-			sb.WriteString("- Processes & Memory: For specific PIDs use 'ps -p <PID> -o pid,%cpu,%mem,rss,command'. For top consumers: 'ps aux -r | head -n 6' (CPU) or 'top -l 1 | grep PhysMem' (Memory). Do NOT use Linux 'free' or GNU '--sort'.\n")
-			sb.WriteString("- Use 'sed -i \"\"' for in-place file editing.\n")
 			sb.WriteString("- Quote all variables (\"$VAR\") and glob patterns.\n")
-			sb.WriteString("Multi-Step Tasks:\n")
-			sb.WriteString("- When a request has sequential steps (\"do X then Y\", \"wait N seconds and show Z\"), chain with '&&' for fail-fast safety.\n")
-			sb.WriteString("- For time intervals or delays, use 'sleep <N>' before the query command.\n")
-			sb.WriteString("- Use idempotent patterns ('mkdir -p', pre-existence checks).\n\n")
+			sb.WriteString("- Multi-Step Tasks: Chain sequential steps with '&&' for fail-fast safety. For time delays use 'sleep <N>'.\n")
+			sb.WriteString("- Idempotence: Use idempotent patterns ('mkdir -p', pre-existence checks).\n\n")
 		case "windows":
 			sb.WriteString("Target Environment: Windows Command Prompt (CMD)\n")
 			sb.WriteString("Syntax & Execution:\n")
 			sb.WriteString("- Use standard Windows batch/cmd utilities (dir, findstr, tasklist, type).\n")
-			sb.WriteString("Multi-Step Tasks:\n")
-			sb.WriteString("- When a request has sequential steps, chain operations with '&&'.\n\n")
+			sb.WriteString("- Multi-Step Tasks: Chain sequential operations with '&&'.\n\n")
 		default:
 			sb.WriteString("Target Environment: Linux POSIX (GNU)\n")
 			sb.WriteString("Syntax & Execution:\n")
 			sb.WriteString("- Generate non-interactive batch commands; avoid interactive tools (top, htop, less, nano, vi).\n")
-			sb.WriteString("- Processes & Memory: For specific PIDs use 'ps -p <PIDs> -o pid,%cpu,%mem,rss,cmd'. For top consumers: 'ps aux --sort=-%cpu | head -n 6' (or sort=-%mem). For memory overview: 'free -h'.\n")
-			sb.WriteString("- Use standard GNU utilities (ps, grep, awk, sed, find, curl, tar) with quoted variables (\"$VAR\") and globs.\n")
-			sb.WriteString("Multi-Step Tasks:\n")
-			sb.WriteString("- When a request has sequential steps (\"do X then Y\", \"wait N seconds and show Z\"), chain with '&&' for fail-fast safety.\n")
-			sb.WriteString("- For time intervals or delays, use 'sleep <N>' before the query command.\n")
-			sb.WriteString("- Use idempotent patterns ('mkdir -p', 'rm -f', '[ -f ... ]').\n\n")
+			sb.WriteString("- Use standard GNU utilities with quoted variables (\"$VAR\") and globs.\n")
+			sb.WriteString("- Multi-Step Tasks: Chain sequential steps with '&&' for fail-fast safety. For time delays use 'sleep <N>'.\n")
+			sb.WriteString("- Idempotence: Use idempotent patterns ('mkdir -p', 'rm -f', '[ -f ... ]').\n\n")
 		}
 	}
 

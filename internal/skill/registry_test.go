@@ -154,3 +154,42 @@ func TestRegistry_RepositoryExampleSkills(t *testing.T) {
 		}
 	}
 }
+
+func TestRegistry_AllBuiltinSkills(t *testing.T) {
+	reg := NewRegistry(t.TempDir(), t.TempDir())
+	if err := reg.Discover(); err != nil {
+		t.Fatalf("Discover failed: %v", err)
+	}
+
+	expectedBuiltins := []string{
+		"git-commit",
+		"sys-diagnostics",
+		"process-management",
+		"network-triage",
+		"docker-workloads",
+		"docker-cleanup",
+		"tool-installer",
+		"disk-storage-triage",
+		"git-workflow",
+		"service-management",
+		"log-analyzer",
+		"security-permissions",
+	}
+
+	for _, name := range expectedBuiltins {
+		s, ok := reg.Get(name)
+		if !ok {
+			t.Errorf("expected embedded builtin skill '%s' to be loaded", name)
+			continue
+		}
+		if s.Scope != ScopeBuiltin {
+			t.Errorf("expected skill '%s' to have ScopeBuiltin, got %s", name, s.Scope)
+		}
+		if s.Description == "" {
+			t.Errorf("builtin skill '%s' has empty description", name)
+		}
+		if s.Body == "" {
+			t.Errorf("builtin skill '%s' has empty body", name)
+		}
+	}
+}

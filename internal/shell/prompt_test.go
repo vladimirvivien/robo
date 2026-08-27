@@ -21,8 +21,8 @@ func TestBuildSystemPrompt_PowerShell(t *testing.T) {
 	if !strings.Contains(prompt, "Target Environment: Windows PowerShell") {
 		t.Errorf("expected PowerShell target environment, got:\n%s", prompt)
 	}
-	if !strings.Contains(prompt, "Get-ChildItem") || !strings.Contains(prompt, "Select-String") {
-		t.Errorf("expected PowerShell cmdlets in prompt, got:\n%s", prompt)
+	if !strings.Contains(prompt, "object pipelines '|'") {
+		t.Errorf("expected object pipelines syntax rule in prompt, got:\n%s", prompt)
 	}
 	// Ensure POSIX rules are omitted
 	if strings.Contains(prompt, "GNU utilities") || strings.Contains(prompt, "Target Environment: Linux") {
@@ -54,7 +54,7 @@ func TestBuildSystemPrompt_LinuxBash(t *testing.T) {
 		t.Errorf("expected GNU utilities and && chaining in prompt, got:\n%s", prompt)
 	}
 	// Ensure PowerShell rules are omitted
-	if strings.Contains(prompt, "Get-ChildItem") || strings.Contains(prompt, "Windows PowerShell") {
+	if strings.Contains(prompt, "Windows PowerShell") {
 		t.Errorf("Linux prompt should not contain PowerShell rules")
 	}
 }
@@ -73,11 +73,11 @@ func TestBuildSystemPrompt_DarwinZsh(t *testing.T) {
 	if !strings.Contains(prompt, "Target Environment: macOS POSIX (BSD)") {
 		t.Errorf("expected macOS target environment, got:\n%s", prompt)
 	}
-	if !strings.Contains(prompt, "BSD") || !strings.Contains(prompt, "sed -i") {
-		t.Errorf("expected BSD compatibility notes in macOS prompt, got:\n%s", prompt)
+	if !strings.Contains(prompt, "BSD") {
+		t.Errorf("expected BSD note in macOS prompt, got:\n%s", prompt)
 	}
-	if strings.Contains(prompt, "Get-ChildItem") {
-		t.Errorf("macOS prompt should not contain PowerShell cmdlets")
+	if strings.Contains(prompt, "Windows PowerShell") {
+		t.Errorf("macOS prompt should not contain PowerShell rules")
 	}
 }
 
@@ -99,15 +99,19 @@ func TestBuildSystemPrompt_FishDropDown(t *testing.T) {
 	if !strings.Contains(prompt, "Bash compatibility layer for Fish") {
 		t.Errorf("expected fish compatibility note, got:\n%s", prompt)
 	}
-	if strings.Contains(prompt, "Get-ChildItem") {
-		t.Errorf("Fish prompt should not contain PowerShell cmdlets")
+	if strings.Contains(prompt, "Windows PowerShell") {
+		t.Errorf("Fish prompt should not contain PowerShell rules")
 	}
 }
 
-func TestBuildSystemPrompt_CustomInstructions(t *testing.T) {
-	prompt := shell.BuildSystemPrompt("linux", "amd64", shell.ShellBash, "Always use verbose flags", nil)
+func TestBuildSystemPrompt_CustomInstructionsAndSkills(t *testing.T) {
+	skillsIndex := "<available_skills>\n• git-commit: Analyzes git diff\n</available_skills>"
+	prompt := shell.BuildSystemPromptWithSkills("linux", "amd64", shell.ShellBash, "Always use verbose flags", nil, skillsIndex)
 
 	if !strings.Contains(prompt, "User Instructions:") || !strings.Contains(prompt, "Always use verbose flags") {
 		t.Errorf("expected custom user instructions in prompt, got:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "<available_skills>") || !strings.Contains(prompt, "git-commit") {
+		t.Errorf("expected skills index in prompt, got:\n%s", prompt)
 	}
 }
